@@ -26,6 +26,15 @@ Preset makeConversation() {
         {4200.0, 1.2, 3.5},
     };
     m.highShelfGainAt100Db = 1.5;
+    // Conference audio is usually near-mono, so the sides hold little. Lifting
+    // the speech range in the mid channel still keeps whatever room noise is
+    // spread across the image from coming up with the voice.
+    m.midSideEnabled = true;
+    m.sideGainAt100Db = -3.0;
+    // Calls swing between a close talker and a distant one, over seconds.
+    m.autoGainEnabled = true;
+    m.autoGainTargetLufs = -18.0;
+    m.autoGainRangeAt100Db = 10.0;
     m.compressorThresholdAt100Db = -30.0;
     m.compressorRatioAt100 = 6.0;
     m.compressorAttackMs = 8.0;
@@ -50,6 +59,15 @@ Preset makeLecture() {
     // Rolling the top off is what makes an hour of listening tolerable.
     m.highShelfFreqHz = 8000.0;
     m.highShelfGainAt100Db = -2.0;
+    m.midSideEnabled = true;
+    m.sideGainAt100Db = -2.0;
+    // A lecture runs for an hour and the speaker drifts from the microphone.
+    // Slow and gentle: nothing here should be audible as movement.
+    m.autoGainEnabled = true;
+    m.autoGainTargetLufs = -19.0;
+    m.autoGainRangeAt100Db = 8.0;
+    m.autoGainRiseDbPerSecond = 0.04;
+    m.autoGainFallDbPerSecond = 0.08;
     m.compressorThresholdAt100Db = -26.0;
     m.compressorRatioAt100 = 4.0;
     m.compressorAttackMs = 15.0;
@@ -73,6 +91,20 @@ Preset makeMovie() {
         {3200.0, 1.2, 4.5},
     };
     m.highShelfGainAt100Db = 1.0;
+    // This is where mid/side earns its place. Film dialogue is mixed dead
+    // centre and the score and effects are spread wide, so lifting the speech
+    // range in the mid channel raises the dialogue without dragging the music
+    // up with it — which is exactly what the same lift does on L and R.
+    m.midSideEnabled = true;
+    m.sideGainAt100Db = -4.0;
+    // A quiet dialogue scene and the action scene twenty seconds later are
+    // minutes apart in the compressor's terms. Only the slow stage can see
+    // that far.
+    m.autoGainEnabled = true;
+    m.autoGainTargetLufs = -20.0;
+    m.autoGainRangeAt100Db = 12.0;
+    m.autoGainRiseDbPerSecond = 0.05;
+    m.autoGainFallDbPerSecond = 0.10;
     // A low threshold with a slow release is what actually closes the gap
     // between whispered dialogue and an explosion.
     m.compressorThresholdAt100Db = -34.0;
@@ -99,6 +131,15 @@ Preset makeNight() {
         {3000.0, 1.2, 5.0},
     };
     m.highShelfGainAt100Db = 0.5;
+    m.midSideEnabled = true;
+    m.sideGainAt100Db = -5.0;
+    // At night the whole point is that nothing is ever loud, so the slow stage
+    // gets the widest range of any preset and a low target to aim at.
+    m.autoGainEnabled = true;
+    m.autoGainTargetLufs = -22.0;
+    m.autoGainRangeAt100Db = 14.0;
+    m.autoGainRiseDbPerSecond = 0.08;
+    m.autoGainFallDbPerSecond = 0.16;
     m.compressorThresholdAt100Db = -40.0;
     m.compressorRatioAt100 = 10.0;
     m.compressorAttackMs = 8.0;
@@ -125,6 +166,14 @@ Preset makeOldRecording() {
     // Old sources roll off early; a shelf restores some of the air they lack.
     m.highShelfFreqHz = 6000.0;
     m.highShelfGainAt100Db = 4.0;
+    // Left off deliberately. Old recordings are usually mono or fake stereo,
+    // where the side channel holds no dialogue to separate out — only whatever
+    // difference the transfer introduced. Trimming that would remove noise and
+    // nothing else, which is not what this stage is for.
+    m.midSideEnabled = false;
+    m.autoGainEnabled = true;
+    m.autoGainTargetLufs = -18.0;
+    m.autoGainRangeAt100Db = 10.0;
     m.compressorThresholdAt100Db = -28.0;
     m.compressorRatioAt100 = 5.0;
     m.compressorAttackMs = 12.0;
@@ -146,8 +195,173 @@ Preset makeStandard() {
         {2000.0, 1.0, 3.0},
     };
     m.highShelfGainAt100Db = 0.5;
+    // Light everywhere, including here: the standard preset is meant to be the
+    // one you can leave on without ever noticing it.
+    m.midSideEnabled = true;
+    m.sideGainAt100Db = -1.5;
+    m.autoGainEnabled = true;
+    m.autoGainTargetLufs = -18.0;
+    m.autoGainRangeAt100Db = 6.0;
+    m.autoGainRiseDbPerSecond = 0.04;
+    m.autoGainFallDbPerSecond = 0.08;
     m.compressorThresholdAt100Db = -24.0;
     m.compressorRatioAt100 = 3.0;
+    return p;
+}
+
+// --- 音楽 -------------------------------------------------------------------
+//
+// Music presets are mostly about restraint. Everything else here exists to make
+// speech easier to follow, and speech processing applied to music is audible as
+// damage: the mid lift that pulls a voice forward also pulls a snare forward,
+// and the levelling that closes the gap between a whisper and an explosion also
+// closes the one between a verse and a chorus, which is the arrangement.
+//
+// So these do less, and what they do is chosen to leave the record's own shape
+// alone. Two rules run through all four:
+//
+//   * The side channel is never trimmed. On dialogue, holding the sides back
+//     brings the centre forward; on music it collapses the stereo image, and
+//     the image is part of the recording. Mid/side is still used where the
+//     centre is worth lifting on its own — but at unity side gain, so nothing
+//     narrows.
+//   * Slow levelling stays on. Records differ in mastering level by more than
+//     anything else in this list, and that difference is exactly what a stage
+//     working over minutes is for.
+
+Preset makeRock() {
+    Preset p;
+    p.id = "rock";
+    p.category = PresetCategory::Music;
+    p.name = "ロック";
+    p.description = "歪んだギターに埋もれがちなボーカルを前に出し、低音の飽和を整理します。";
+    p.sliders = {30, 40, 30};
+
+    PresetMapping& m = p.mapping;
+    // Rock lives on its low end; the highpass only clears what is below the
+    // kick drum's fundamental.
+    m.highpassFreqAt100Hz = 60.0;
+    m.lowShelfFreqHz = 250.0;
+    m.lowShelfGainAt100Db = -2.5;  // the "mud" region where bass and guitar pile up
+    m.speechBandsAt100 = {
+        {1600.0, 0.9, 2.0},
+        {3400.0, 1.1, 3.0},  // where a vocal cuts through a wall of guitars
+    };
+    m.highShelfFreqHz = 9000.0;
+    m.highShelfGainAt100Db = 1.0;
+    // Vocals sit centre and the guitars are spread, so the lift can be aimed at
+    // the voice alone. The sides keep their level: narrowing a rock mix is very
+    // audible and would be a worse trade than the presence gained.
+    m.midSideEnabled = true;
+    m.sideGainAt100Db = 0.0;
+    m.autoGainEnabled = true;
+    m.autoGainTargetLufs = -16.0;
+    m.autoGainRangeAt100Db = 8.0;
+    // Already compressed on the record. Anything more than a light touch here
+    // is squashing something that was deliberately squashed once already.
+    m.compressorThresholdAt100Db = -20.0;
+    m.compressorRatioAt100 = 3.0;
+    m.compressorAttackMs = 20.0;
+    m.compressorReleaseMs = 200.0;
+    return p;
+}
+
+Preset makeJazz() {
+    Preset p;
+    p.id = "jazz";
+    p.category = PresetCategory::Music;
+    p.name = "ジャズ";
+    p.description = "小編成の各楽器の輪郭を保ったまま、角張った高域だけを丸めます。";
+    p.sliders = {20, 30, 20};
+
+    PresetMapping& m = p.mapping;
+    m.highpassFreqAt100Hz = 50.0;  // double bass goes low; leave it there
+    m.lowShelfFreqHz = 180.0;
+    m.lowShelfGainAt100Db = -1.5;
+    m.speechBandsAt100 = {
+        {2500.0, 0.8, 1.5},  // brass and reed presence, gently
+    };
+    // Cymbals are the loudest thing in a small-group recording and the first
+    // thing to become tiring, so the top comes down rather than up.
+    m.highShelfFreqHz = 10000.0;
+    m.highShelfGainAt100Db = -1.5;
+    // Off: in a small group nothing is privileged by being centred. The piano
+    // is as likely to be hard left as the drums are to be centre, so lifting
+    // the mid would pick an instrument at random.
+    m.midSideEnabled = false;
+    m.autoGainEnabled = true;
+    m.autoGainTargetLufs = -18.0;
+    m.autoGainRangeAt100Db = 8.0;
+    m.compressorThresholdAt100Db = -22.0;
+    m.compressorRatioAt100 = 2.5;
+    m.compressorAttackMs = 30.0;   // let the attack of a struck note through
+    m.compressorReleaseMs = 400.0;
+    return p;
+}
+
+Preset makeClassical() {
+    Preset p;
+    p.id = "classical";
+    p.category = PresetCategory::Music;
+    p.name = "クラシック";
+    p.description = "ダイナミクスとホールの響きを最大限残し、必要最小限だけ触ります。";
+    p.sliders = {15, 20, 25};
+
+    PresetMapping& m = p.mapping;
+    // An orchestra's bottom octave is real content, not rumble.
+    m.highpassFreqAt100Hz = 40.0;
+    m.lowShelfFreqHz = 150.0;
+    m.lowShelfGainAt100Db = -1.0;
+    m.speechBandsAt100 = {
+        {3000.0, 0.7, 1.5},  // just enough to keep strings from turning to mush
+    };
+    m.highShelfFreqHz = 11000.0;
+    m.highShelfGainAt100Db = 0.0;
+    // Off, emphatically. The spatial information in a hall recording is most of
+    // what distinguishes it from a studio one, and it lives in the sides.
+    m.midSideEnabled = false;
+    // The one place a slow stage genuinely helps: a pianissimo movement and the
+    // finale of the same symphony can be twenty dB apart, and no compressor
+    // setting gentle enough to leave the music alone can span that.
+    m.autoGainEnabled = true;
+    m.autoGainTargetLufs = -20.0;
+    m.autoGainRangeAt100Db = 10.0;
+    // The lightest compression of any preset. Dynamics *are* the performance.
+    m.compressorThresholdAt100Db = -24.0;
+    m.compressorRatioAt100 = 3.0;
+    m.compressorAttackMs = 40.0;
+    m.compressorReleaseMs = 600.0;
+    return p;
+}
+
+Preset makeAmbient() {
+    Preset p;
+    p.id = "ambient";
+    p.category = PresetCategory::Music;
+    p.name = "アンビエント";
+    p.description = "小さな音量でも細部が消えないよう持ち上げ、広がりはそのまま保ちます。";
+    p.sliders = {20, 15, 35};
+
+    PresetMapping& m = p.mapping;
+    m.highpassFreqAt100Hz = 45.0;
+    m.lowShelfFreqHz = 160.0;
+    m.lowShelfGainAt100Db = -1.0;
+    m.speechBandsAt100 = {
+        {4000.0, 0.7, 1.5},  // keeps texture from disappearing at low volume
+    };
+    m.highShelfFreqHz = 12000.0;
+    m.highShelfGainAt100Db = 1.0;
+    // Off. Width is not incidental to this music, it is the point of it.
+    m.midSideEnabled = false;
+    // Ambient records are often mastered very quietly, and that is the whole
+    // reason this stage exists.
+    m.autoGainEnabled = true;
+    m.autoGainTargetLufs = -20.0;
+    m.autoGainRangeAt100Db = 12.0;
+    m.compressorThresholdAt100Db = -26.0;
+    m.compressorRatioAt100 = 3.0;
+    m.compressorAttackMs = 50.0;
+    m.compressorReleaseMs = 800.0;
     return p;
 }
 
@@ -192,7 +406,23 @@ dsp::DspParameters resolveParameters(const Preset& preset, const SliderValues& r
     p.highShelfGainDb = lerp(m.highShelfGainAt0Db, m.highShelfGainAt100Db, clarity);
     p.highShelfQ = m.highShelfQ;
 
+    // With the clarity slider at 0 the speech bands are flat and the side gain
+    // is unity, so mid/side reconstructs the input exactly — correct, but a
+    // waste of arithmetic. Below the threshold it is switched out instead.
+    p.midSideEnabled = m.midSideEnabled && clarity > 0.02;
+    p.sideGainDb = lerp(0.0, m.sideGainAt100Db, clarity);
+
     // --- 音量差 ---
+    // Two stages on two time scales. The slow one takes out the difference
+    // between one scene and the next; the compressor takes out the difference
+    // between one syllable and the next. Neither can do the other's job.
+    p.autoGain.enabled = m.autoGainEnabled && leveling > 0.02;
+    p.autoGain.targetLufs = m.autoGainTargetLufs;
+    p.autoGain.maxBoostDb = lerp(0.0, m.autoGainRangeAt100Db, leveling);
+    p.autoGain.maxCutDb = lerp(0.0, m.autoGainRangeAt100Db, leveling);
+    p.autoGain.riseDbPerSecond = m.autoGainRiseDbPerSecond;
+    p.autoGain.fallDbPerSecond = m.autoGainFallDbPerSecond;
+
     // At a slider of 0 the ratio interpolates to 1:1, which is a no-op, so the
     // compressor is switched out entirely rather than run for nothing.
     p.compressorEnabled = leveling > 0.02;
@@ -220,8 +450,13 @@ dsp::DspParameters resolveParameters(const Preset& preset) {
 
 const std::vector<Preset>& builtinPresets() {
     static const std::vector<Preset> presets = {
-        makeStandard(), makeConversation(), makeLecture(),
-        makeMovie(),    makeNight(),        makeOldRecording(),
+        // Speech first, then music: the app is for making things easier to
+        // hear, and the music presets are the ones that mostly stay out of the
+        // way.
+        makeStandard(),   makeConversation(), makeLecture(),
+        makeMovie(),      makeNight(),        makeOldRecording(),
+        makeRock(),       makeJazz(),         makeClassical(),
+        makeAmbient(),
     };
     return presets;
 }

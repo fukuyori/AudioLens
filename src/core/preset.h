@@ -42,6 +42,25 @@ struct PresetMapping {
     double highShelfGainAt100Db = 0.0;
     double highShelfQ = 0.707;
 
+    /// Lift the speech range in the mid channel only, and hold the sides back.
+    /// Worth having wherever the source is stereo with centred dialogue; not
+    /// worth it for material that is mono to begin with, where it does nothing.
+    bool midSideEnabled = false;
+    /// Side level at a clarity slider of 100. Negative brings the centre
+    /// forward relative to everything else.
+    double sideGainAt100Db = 0.0;
+
+    // --- 音量差 (遅い側) ---
+    /// Scene-to-scene levelling, ahead of the compressor. Presets meant for
+    /// long-form material want it; a preset for a short call does not gain much.
+    bool autoGainEnabled = false;
+    double autoGainTargetLufs = -18.0;
+    /// How far the slow gain may travel at a leveling slider of 100, in either
+    /// direction. At slider 0 the range is zero, which is the same as off.
+    double autoGainRangeAt100Db = 9.0;
+    double autoGainRiseDbPerSecond = 0.05;
+    double autoGainFallDbPerSecond = 0.10;
+
     // --- 音量差 ---
     double compressorThresholdAt0Db = -12.0;
     double compressorThresholdAt100Db = -32.0;
@@ -59,10 +78,23 @@ struct PresetMapping {
     double limiterReleaseMs = 60.0;
 };
 
+/// What a preset is trying to do, which decides what counts as it working.
+///
+/// A speech preset has failed if it leaves the gap between quiet and loud
+/// passages where it found it. A music preset has failed if it closes that gap,
+/// because on a record the gap is the arrangement. The two cannot be held to
+/// the same standard, and pretending otherwise would mean compressing music to
+/// satisfy a test written for dialogue.
+enum class PresetCategory {
+    Speech,
+    Music,
+};
+
 struct Preset {
     std::string id;
     std::string name;         ///< Display name, Japanese.
     std::string description;  ///< One line explaining when to reach for it.
+    PresetCategory category = PresetCategory::Speech;
     SliderValues sliders;
     PresetMapping mapping;
 };

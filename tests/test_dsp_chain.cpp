@@ -173,18 +173,36 @@ AL_TEST(DspChain_leveling_slider_narrows_the_loudness_range) {
     CHECK(rangeOn < rangeOff - 5.0);
 }
 
-AL_TEST(DspChain_every_preset_narrows_the_loudness_range) {
+AL_TEST(DspChain_every_preset_does_what_its_category_promises) {
     const std::vector<float> input = makeDynamicMaterial();
     const double rangeBefore = measureLoudness(input, kChannels, kRate).loudnessRangeLu;
 
+    // The two categories are held to opposite standards, because they are
+    // trying to do opposite things. A speech preset that leaves the gap between
+    // quiet and loud where it found it has not done its job; a music preset
+    // that closes it has damaged the arrangement.
     for (const Preset& preset : builtinPresets()) {
         const std::vector<float> output = runPreset(preset, preset.sliders, input);
         const double rangeAfter = measureLoudness(output, kChannels, kRate).loudnessRangeLu;
-        if (rangeAfter >= rangeBefore) {
-            ::altest::reportFailure(__FILE__, __LINE__,
-                                    "preset '" + preset.id + "' did not narrow the range: " +
-                                        std::to_string(rangeBefore) + " -> " +
-                                        std::to_string(rangeAfter));
+
+        if (preset.category == audiolens::PresetCategory::Speech) {
+            if (rangeAfter >= rangeBefore) {
+                ::altest::reportFailure(__FILE__, __LINE__,
+                                        "speech preset '" + preset.id +
+                                            "' did not narrow the range: " +
+                                            std::to_string(rangeBefore) + " -> " +
+                                            std::to_string(rangeAfter));
+            }
+        } else {
+            // Music presets are allowed to leave the range alone. What they are
+            // not allowed to do is widen it: whatever else they are for, none
+            // of them should make a record harder to listen to than it was.
+            if (rangeAfter > rangeBefore + 0.5) {
+                ::altest::reportFailure(__FILE__, __LINE__,
+                                        "music preset '" + preset.id + "' widened the range: " +
+                                            std::to_string(rangeBefore) + " -> " +
+                                            std::to_string(rangeAfter));
+            }
         }
     }
 }

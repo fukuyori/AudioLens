@@ -95,6 +95,8 @@ int main(int argc, char** argv) {
     int bass = -1;
     int clarity = -1;
     int leveling = -1;
+    bool noAutoGain = false;
+    bool noMidSide = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -127,6 +129,10 @@ int main(int argc, char** argv) {
                 std::puts("--leveling は 0〜100 で指定してください");
                 return 2;
             }
+        } else if (arg == "--no-autogain") {
+            noAutoGain = true;
+        } else if (arg == "--no-midside") {
+            noMidSide = true;
         } else if (arg == "--list-presets") {
             printPresetList();
             return 0;
@@ -176,7 +182,14 @@ int main(int argc, char** argv) {
         ScopedNoDenormals noDenormals;
         dsp::DspChain chain;
         chain.prepare(input.sampleRate, input.channels, 512);
-        chain.setParameters(resolveParameters(*preset, sliders));
+        // Switching a single stage out is how its contribution is attributed.
+        // Without it the only way to ask "what did that stage do?" is to edit
+        // the preset table and rebuild, which is not a measurement anyone
+        // repeats.
+        audiolens::dsp::DspParameters parameters = resolveParameters(*preset, sliders);
+        if (noAutoGain) parameters.autoGain.enabled = false;
+        if (noMidSide) parameters.midSideEnabled = false;
+        chain.setParameters(parameters);
         // prepare() settled on whatever was published before; re-settle so the
         // measurement is not skewed by a 40 ms ramp at the head of the file.
         chain.prepare(input.sampleRate, input.channels, 512);

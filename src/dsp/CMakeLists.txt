@@ -1,10 +1,14 @@
 add_library(audiolens_dsp STATIC
+    auto_gain.cpp
+    auto_gain.h
     biquad.cpp
     biquad.h
     compressor.cpp
     compressor.h
     dsp_chain.cpp
     dsp_chain.h
+    k_weighting.cpp
+    k_weighting.h
     limiter.cpp
     limiter.h
     parameters.h

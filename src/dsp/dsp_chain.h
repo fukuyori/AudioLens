@@ -1,5 +1,6 @@
 #pragma once
 
+#include "dsp/auto_gain.h"
 #include "dsp/biquad.h"
 #include "dsp/compressor.h"
 #include "dsp/limiter.h"
@@ -25,9 +26,11 @@ struct LevelSnapshot {
 /// The AudioLens processing chain:
 ///
 ///     input gain -> highpass -> low shelf -> speech bands -> high shelf
-///                -> compressor -> output gain -> limiter
+///                -> compressor -> auto gain -> output gain -> limiter
 ///
-/// Filters run per channel; the compressor and limiter are channel-linked.
+/// Filters run per channel, except that the speech bands can run on the mid
+/// channel alone (see DspParameters::midSideEnabled). The auto gain,
+/// compressor and limiter are all channel-linked.
 ///
 /// Parameters are published from the control thread with a seqlock and picked
 /// up by the audio thread at sub-block boundaries. Control values are ramped
@@ -52,6 +55,11 @@ public:
 
     /// Current compressor gain reduction in dB, for metering. Never positive.
     double gainReductionDb() const noexcept;
+
+    /// What the slow levelling stage is doing: the gain it currently holds, and
+    /// the short-term loudness it measured to arrive at it.
+    double autoGainDb() const noexcept { return autoGain_.currentGainDb(); }
+    double measuredLufs() const noexcept { return autoGain_.measuredLufs(); }
 
     /// Safe to call from any thread while audio is running.
     LevelSnapshot levels() const noexcept;
@@ -89,6 +97,7 @@ private:
     FilterStage lowShelf_;
     std::array<FilterStage, kMaxSpeechBands> speechBands_;
     FilterStage highShelf_;
+    AutoGain autoGain_;
     Compressor compressor_;
     Limiter limiter_;
 
@@ -112,6 +121,13 @@ private:
     double smoothingCoeff_ = 0.0;
     float inputGainLinear_ = 1.0f;
     float outputGainLinear_ = 1.0f;
+    float sideGainLinear_ = 1.0f;
+
+    /// Whether the speech bands are currently running on the mid channel.
+    /// Tracked separately from the parameter so that a change can reset the
+    /// filters: their state would otherwise carry mid samples into the left
+    /// channel, or the other way round, and that is heard as a click.
+    bool midSideActive_ = false;
 
     double meterDecayPerSubBlock_ = 0.0;
     std::atomic<float> meterInputPeak_{0.0f};

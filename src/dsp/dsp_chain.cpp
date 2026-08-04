@@ -70,6 +70,7 @@ void DspChain::prepare(std::uint32_t sampleRate, std::uint32_t channels,
     }
     highShelf_.prepare(channels_);
 
+    autoGain_.prepare(sampleRate_, channels_);
     compressor_.prepare(sampleRate_);
     limiter_.prepare(sampleRate_, channels_);
 
@@ -128,6 +129,7 @@ void DspChain::updateSmoothedTargets() noexcept {
     approach(current_.lowShelfFreqHz, target_.lowShelfFreqHz, c);
     approach(current_.highShelfGainDb, target_.highShelfGainDb, c);
     approach(current_.highShelfFreqHz, target_.highShelfFreqHz, c);
+    approach(current_.sideGainDb, target_.sideGainDb, c);
 
     for (int i = 0; i < kMaxSpeechBands; ++i) {
         approach(current_.speechBands[i].gainDb, target_.speechBands[i].gainDb, c);
@@ -144,10 +146,14 @@ void DspChain::updateSmoothedTargets() noexcept {
     current_.highShelfQ = target_.highShelfQ;
     current_.speechBandCount = target_.speechBandCount;
 
-    // The compressor smooths its own gain with attack and release, and the
-    // limiter is a safety device, so both take settings changes directly.
+    current_.midSideEnabled = target_.midSideEnabled;
+
+    // The compressor smooths its own gain with attack and release, the auto
+    // gain has its own rate limits, and the limiter is a safety device, so all
+    // three take settings changes directly.
     current_.compressorEnabled = target_.compressorEnabled;
     current_.compressor = target_.compressor;
+    current_.autoGain = target_.autoGain;
     current_.limiter = target_.limiter;
 }
 
@@ -164,14 +170,17 @@ bool DspChain::coefficientsNeedRebuild() const noexcept {
     if (current_.highpassEnabled != built_.highpassEnabled ||
         current_.speechBandCount != built_.speechBandCount ||
         current_.compressorEnabled != built_.compressorEnabled ||
-        !(current_.compressor == built_.compressor) || !(current_.limiter == built_.limiter)) {
+        current_.midSideEnabled != built_.midSideEnabled ||
+        !(current_.autoGain == built_.autoGain) || !(current_.compressor == built_.compressor) ||
+        !(current_.limiter == built_.limiter)) {
         return true;
     }
 
     if (!nearlyEqual(current_.inputGainDb, built_.inputGainDb, kGainTolerance) ||
         !nearlyEqual(current_.outputGainDb, built_.outputGainDb, kGainTolerance) ||
         !nearlyEqual(current_.lowShelfGainDb, built_.lowShelfGainDb, kGainTolerance) ||
-        !nearlyEqual(current_.highShelfGainDb, built_.highShelfGainDb, kGainTolerance)) {
+        !nearlyEqual(current_.highShelfGainDb, built_.highShelfGainDb, kGainTolerance) ||
+        !nearlyEqual(current_.sideGainDb, built_.sideGainDb, kGainTolerance)) {
         return true;
     }
 
@@ -215,11 +224,25 @@ void DspChain::rebuildCoefficients() noexcept {
     highShelf_.setCoeffs(designHighShelf(current_.highShelfFreqHz, current_.highShelfGainDb,
                                          current_.highShelfQ, rate));
 
+    autoGain_.setSettings(current_.autoGain);
     compressor_.setSettings(current_.compressor);
     limiter_.setSettings(current_.limiter);
 
     inputGainLinear_ = dbToLinear(current_.inputGainDb);
     outputGainLinear_ = dbToLinear(current_.outputGainDb);
+    sideGainLinear_ = dbToLinear(current_.sideGainDb);
+
+    // Switching the speech bands between L/R and mid leaves their state holding
+    // samples from the wrong signal. Clearing is a discontinuity of one sample
+    // at most; carrying it over is a click.
+    const bool midSide = current_.midSideEnabled && channels_ == 2;
+    if (midSide != midSideActive_) {
+        midSideActive_ = midSide;
+        for (FilterStage& stage : speechBands_) {
+            stage.reset();
+        }
+    }
+
     built_ = current_;
     coefficientsValid_ = true;
 }
@@ -258,30 +281,70 @@ void DspChain::process(float* audio, std::size_t frames, std::uint32_t channels)
             continue;
         }
 
+        const int bands = std::min(current_.speechBandCount, kMaxSpeechBands);
+
         for (std::size_t f = 0; f < count; ++f) {
             float* frame = block + f * channels;
 
+            // --- bass shaping, always per channel ---
             for (std::uint32_t c = 0; c < active; ++c) {
                 float sample = frame[c] * inputGainLinear_;
-
                 if (current_.highpassEnabled) {
                     sample = highpass_.perChannel[c].process(sample);
                 }
-                sample = lowShelf_.perChannel[c].process(sample);
-                for (int b = 0; b < current_.speechBandCount && b < kMaxSpeechBands; ++b) {
-                    sample = speechBands_[static_cast<std::size_t>(b)].perChannel[c].process(sample);
-                }
-                sample = highShelf_.perChannel[c].process(sample);
-
-                frame[c] = sample;
+                frame[c] = lowShelf_.perChannel[c].process(sample);
             }
 
+            // --- speech bands, on the mid channel when asked ---
+            // `active` is re-checked here and not only in rebuildCoefficients:
+            // the caller supplies the channel count per call, and reading
+            // frame[1] on a mono block would run off the end of it.
+            if (midSideActive_ && active == 2) {
+                float mid = 0.5f * (frame[0] + frame[1]);
+                float side = 0.5f * (frame[0] - frame[1]);
+
+                for (int b = 0; b < bands; ++b) {
+                    mid = speechBands_[static_cast<std::size_t>(b)].perChannel[0].process(mid);
+                }
+                side *= sideGainLinear_;
+
+                frame[0] = mid + side;
+                frame[1] = mid - side;
+            } else {
+                for (std::uint32_t c = 0; c < active; ++c) {
+                    float sample = frame[c];
+                    for (int b = 0; b < bands; ++b) {
+                        sample =
+                            speechBands_[static_cast<std::size_t>(b)].perChannel[c].process(sample);
+                    }
+                    frame[c] = sample;
+                }
+            }
+
+            // --- air, always per channel ---
+            for (std::uint32_t c = 0; c < active; ++c) {
+                frame[c] = highShelf_.perChannel[c].process(frame[c]);
+            }
+
+            // --- levelling: fast first, then slow ---
+            // The order matters and it is not the obvious one. Putting the slow
+            // stage first — normalising the level going into the compressor —
+            // measured *worse* than no slow stage at all: with material that
+            // alternates every few seconds, a stage working on a three second
+            // window arrives half a cycle late and adds gain to the loud part
+            // and takes it off the quiet one, which is the opposite of the job.
+            //
+            // Behind the compressor there is no such trap. The fast stage has
+            // already flattened everything inside its own reach, so what
+            // reaches the slow stage varies only over the long haul, which is
+            // the only thing it was ever meant to correct.
             if (current_.compressorEnabled) {
                 compressor_.processFrame(frame, active);
             }
 
+            const float slowGain = autoGain_.nextGain(frame, active);
             for (std::uint32_t c = 0; c < active; ++c) {
-                frame[c] *= outputGainLinear_;
+                frame[c] *= slowGain * outputGainLinear_;
             }
 
             limiter_.processFrame(frame, channels);
