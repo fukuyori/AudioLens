@@ -18,6 +18,7 @@
 #include <QInputDialog>
 #include <QLabel>
 #include <QListWidget>
+#include <QListWidgetItem>
 #include <QMenu>
 #include <QMessageBox>
 #include <QPainter>
@@ -304,9 +305,26 @@ QWidget* MainWindow::buildFooter() {
     buttons->addWidget(compareButton_, 2);
     layout->addLayout(buttons);
 
+    // The status text and the version share a row: the status is what changes
+    // and gets the room, the version sits quietly at the end of it. Putting it
+    // on a line of its own would give a number that never changes the same
+    // weight as the one thing on this screen that does.
+    auto* statusRow = new QHBoxLayout;
+
     statusLabel_ = new QLabel;
     statusLabel_->setWordWrap(true);
-    layout->addWidget(statusLabel_);
+    statusRow->addWidget(statusLabel_, 1);
+
+    auto* versionLabel = makeHint(QStringLiteral(AUDIOLENS_VERSION));
+    versionLabel->setWordWrap(false);
+    versionLabel->setAlignment(Qt::AlignRight | Qt::AlignBottom);
+    // Selectable so a version can be copied into a bug report rather than
+    // transcribed from the screen.
+    versionLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    versionLabel->setToolTip(QStringLiteral("AudioLens %1").arg(AUDIOLENS_VERSION));
+    statusRow->addWidget(versionLabel, 0);
+
+    layout->addLayout(statusRow);
 
     return container;
 }
@@ -380,12 +398,24 @@ void MainWindow::reloadPresets() {
         presets_.push_back(preset);
     }
 
+    // Rows are set tighter than the style's default so that every preset fits
+    // on screen at once. Scrolling would be the ordinary answer to a list that
+    // has outgrown its box, but not for this list: choosing a preset is the
+    // main thing this window is for, and a choice you have to scroll to find is
+    // one you do not know you have. Four of the ten only appeared on a scroll
+    // before this, and they were the four most recently added.
+    //
+    // The floor keeps the rows a comfortable size to hit with a mouse; padding
+    // is what gets taken away, not legibility.
+    const int rowHeight = std::max(22, presetList_->fontMetrics().height() + 6);
+
     for (int i = 0; i < presets_.size(); ++i) {
         QString label = qs(presets_[i].name);
         if (i >= userPresetStartIndex_) {
             label += QStringLiteral("  (自分の設定)");
         }
-        presetList_->addItem(label);
+        auto* item = new QListWidgetItem(label, presetList_);
+        item->setSizeHint(QSize(0, rowHeight));
 
         if (trayPresetMenu_ != nullptr) {
             QAction* action = trayPresetMenu_->addAction(qs(presets_[i].name));
@@ -396,9 +426,11 @@ void MainWindow::reloadPresets() {
 
     // Size to a whole number of rows. A list ending in a half-visible entry
     // reads as a rendering glitch rather than as "scroll for more".
+    //
+    // The cap only exists so that a user with a great many saved presets does
+    // not get a window taller than their screen; the built-in ten always fit.
     if (presetList_->count() > 0) {
-        constexpr int kMaxVisibleRows = 6;
-        const int rowHeight = presetList_->sizeHintForRow(0);
+        constexpr int kMaxVisibleRows = 14;
         const int visibleRows = std::min(presetList_->count(), kMaxVisibleRows);
         const int frame = 2 * presetList_->frameWidth();
         presetList_->setFixedHeight(rowHeight * visibleRows + frame);
@@ -725,9 +757,19 @@ void MainWindow::updatePresetActions() {
 
 void MainWindow::updateStatusLabel(const EngineStatus& status) {
     if (status.running) {
-        QString text = QStringLiteral("動作中  遅延 %1 ms").arg(status.latencyMs, 0, 'f', 1);
-        if (controller_.dspLatencyMs() > 0.0) {
-            text += QStringLiteral("(うち処理 %1 ms)").arg(controller_.dspLatencyMs(), 0, 'f', 1);
+        // The two are added, not nested. EngineStats::estimatedLatencyMs()
+        // covers the buffering between the two endpoints and knows nothing
+        // about the chain's look-ahead, so the old wording — "of which
+        // processing is N ms" — understated the total by exactly that much.
+        const double processing = controller_.dspLatencyMs();
+        QString text = QStringLiteral("動作中  遅延 %1 ms")
+                           .arg(status.latencyMs + processing, 0, 'f', 1);
+        if (processing > 0.0) {
+            text += QStringLiteral("(バッファ %1 / 処理 %2)")
+                        .arg(status.latencyMs, 0, 'f', 1)
+                        .arg(processing, 0, 'f', 1);
+        } else {
+            text += QStringLiteral("(補正なし)");
         }
         if (status.captureSampleRate != status.renderSampleRate && status.captureSampleRate > 0) {
             text += QStringLiteral("  %1→%2 Hz 変換")

@@ -185,7 +185,22 @@ AL_TEST(DspChain_every_preset_does_what_its_category_promises) {
         const std::vector<float> output = runPreset(preset, preset.sliders, input);
         const double rangeAfter = measureLoudness(output, kChannels, kRate).loudnessRangeLu;
 
-        if (preset.category == audiolens::PresetCategory::Speech) {
+        if (preset.category == audiolens::PresetCategory::Passthrough) {
+            // The strictest of the three: not "barely changed" but unchanged.
+            // A preset that claims to apply nothing has to survive the whole
+            // chain — filters, dynamics, limiter — bit for bit, or the claim is
+            // false and the user who selected it to get out of the way has not
+            // got what they asked for.
+            double worst = 0.0;
+            for (std::size_t i = 0; i < input.size(); ++i) {
+                worst = std::max(worst, static_cast<double>(std::abs(output[i] - input[i])));
+            }
+            if (worst != 0.0) {
+                ::altest::reportFailure(__FILE__, __LINE__,
+                                        "passthrough preset '" + preset.id +
+                                            "' altered the signal by " + std::to_string(worst));
+            }
+        } else if (preset.category == audiolens::PresetCategory::Speech) {
             if (rangeAfter >= rangeBefore) {
                 ::altest::reportFailure(__FILE__, __LINE__,
                                         "speech preset '" + preset.id +
@@ -372,4 +387,26 @@ AL_TEST(Presets_at_zero_leveling_disable_the_compressor) {
                                     "preset '" + preset.id + "' left the compressor on at 0");
         }
     }
+}
+
+AL_TEST(DspChain_adds_no_latency_when_nothing_is_applied) {
+    // The look-ahead limiter is the only thing in the chain that delays
+    // anything, and it is skipped when there is no gain of ours for it to
+    // catch. "No processing" therefore has to mean no delay either; a preset
+    // that applies nothing but still costs two milliseconds would not be the
+    // passthrough it claims to be.
+    const Preset* standard = findBuiltinPreset("standard");
+    CHECK(standard != nullptr);
+    if (standard == nullptr) return;
+
+    DspChain chain;
+    chain.setParameters(resolveParameters(*standard, standard->sliders));
+    chain.prepare(kRate, kChannels, 512);
+    CHECK_NEAR(chain.latencyMs(), 0.0, 1e-9);
+
+    // Moving one amount off zero brings the processing, and its delay, back.
+    chain.setParameters(resolveParameters(*standard, SliderValues{0, 50, 0}));
+    std::vector<float> audio = makeNoise(dbToLinear(-20.0), 0.2);
+    chain.process(audio.data(), audio.size() / kChannels, kChannels);
+    CHECK(chain.latencyMs() > 0.5);
 }

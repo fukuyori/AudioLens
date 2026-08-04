@@ -148,6 +148,7 @@ void DspChain::updateSmoothedTargets() noexcept {
     current_.speechBandCount = target_.speechBandCount;
 
     current_.midSideEnabled = target_.midSideEnabled;
+    current_.passthrough = target_.passthrough;
 
     // The compressor smooths its own gain with attack and release, the auto
     // gain has its own rate limits, and the limiter is a safety device, so all
@@ -173,6 +174,7 @@ bool DspChain::coefficientsNeedRebuild() const noexcept {
         current_.speechBandCount != built_.speechBandCount ||
         current_.compressorEnabled != built_.compressorEnabled ||
         current_.midSideEnabled != built_.midSideEnabled ||
+        current_.passthrough != built_.passthrough ||
         !(current_.autoGain == built_.autoGain) || !(current_.deEsser == built_.deEsser) ||
         !(current_.compressor == built_.compressor) ||
         !(current_.limiter == built_.limiter)) {
@@ -236,6 +238,20 @@ void DspChain::rebuildCoefficients() noexcept {
     outputGainLinear_ = dbToLinear(current_.outputGainDb);
     sideGainLinear_ = dbToLinear(current_.sideGainDb);
 
+    // Coming back from passthrough, every filter holds state from before it was
+    // switched out. Left alone, that stale tail is emitted as the first thing
+    // the user hears after moving a slider off zero.
+    if (current_.passthrough != built_.passthrough) {
+        highpass_.reset();
+        lowShelf_.reset();
+        highShelf_.reset();
+        for (FilterStage& stage : speechBands_) stage.reset();
+        compressor_.reset();
+        limiter_.reset();
+        deEsser_.reset();
+        autoGain_.reset();
+    }
+
     // Switching the speech bands between L/R and mid leaves their state holding
     // samples from the wrong signal. Clearing is a discontinuity of one sample
     // at most; carrying it over is a click.
@@ -270,7 +286,16 @@ void DspChain::process(float* audio, std::size_t frames, std::uint32_t channels)
         }
 
         float* block = audio + offset * channels;
-        updateMeter(meterInputPeak_, blockPeak(block, count, channels), meterDecayPerSubBlock_);
+        const float inputPeak = blockPeak(block, count, channels);
+        updateMeter(meterInputPeak_, inputPeak, meterDecayPerSubBlock_);
+
+        // Nothing to do, and nothing to delay it by. The meters still move, so
+        // the user can see audio arriving and leaving.
+        if (current_.passthrough) {
+            updateMeter(meterOutputPeak_, inputPeak, meterDecayPerSubBlock_);
+            offset += count;
+            continue;
+        }
 
         if (bypass) {
             // Still run the limiter, and only the limiter, so that bypass keeps
@@ -371,6 +396,11 @@ LevelSnapshot DspChain::levels() const noexcept {
 }
 
 double DspChain::latencyMs() const noexcept {
+    // Exactly zero when the chain is inert: the limiter is skipped too, so
+    // there is no look-ahead delay line in the path at all.
+    if (current_.passthrough) {
+        return 0.0;
+    }
     return 1000.0 * static_cast<double>(limiter_.latencyFrames()) / sampleRate_;
 }
 

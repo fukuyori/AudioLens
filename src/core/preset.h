@@ -99,6 +99,9 @@ struct PresetMapping {
 enum class PresetCategory {
     Speech,
     Music,
+    /// Applies nothing at all. Held to the strictest standard of the three:
+    /// the output must be the input, sample for sample, with no added latency.
+    Passthrough,
 };
 
 struct Preset {

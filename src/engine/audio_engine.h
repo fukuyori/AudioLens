@@ -170,6 +170,7 @@ private:
     std::atomic<std::uint64_t> discontinuities_{0};
     std::atomic<std::uint64_t> silenceFills_{0};
     std::atomic<double> driftPpm_{0.0};
+
     std::atomic<std::uint32_t> lastRenderPadding_{0};
 };
 

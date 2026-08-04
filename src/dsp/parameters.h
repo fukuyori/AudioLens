@@ -23,6 +23,18 @@ struct SpeechBand {
 /// and preset already folded in. Deliberately a fixed-size POD so it can be
 /// handed to the audio thread without allocating.
 struct DspParameters {
+    /// Nothing in the chain is doing anything: every gain is zero and every
+    /// stage is switched out. The chain then hands the audio straight back and
+    /// adds no latency whatsoever — not even the limiter's look-ahead.
+    ///
+    /// Skipping the limiter needs justifying, because requirement N-05 says the
+    /// output always passes through one. The limiter is there to catch gain
+    /// *this chain* would otherwise add; with every stage inert the output is
+    /// the input, sample for sample, and cannot be louder than what Windows was
+    /// already about to send to the speaker. There is nothing left for it to
+    /// protect against.
+    bool passthrough = false;
+
     double inputGainDb = 0.0;
 
     bool highpassEnabled = false;

@@ -1,6 +1,7 @@
 #include "core/preset.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace audiolens {
 namespace {
@@ -208,9 +209,15 @@ Preset makeOldRecording() {
 Preset makeStandard() {
     Preset p;
     p.id = "standard";
+    p.category = PresetCategory::Passthrough;
     p.name = "標準";
-    p.description = "常用できる軽い補正です。";
-    p.sliders = {30, 35, 35};
+    p.description = "補正なし。音はそのまま通り、遅延も処理も一切ありません。";
+    // Every amount at zero. "標準" is the setting you leave selected when you
+    // want AudioLens out of the way: the chain detects that nothing is being
+    // applied and hands the audio straight back, adding no latency at all.
+    // Moving any slider off zero switches the processing — and its 2 ms of
+    // limiter look-ahead — back on.
+    p.sliders = {0, 0, 0};
 
     PresetMapping& m = p.mapping;
     m.highpassFreqAt100Hz = 90.0;
@@ -476,6 +483,27 @@ dsp::DspParameters resolveParameters(const Preset& preset, const SliderValues& r
     p.limiter.ceilingDb = m.limiterCeilingDb;
     p.limiter.lookaheadMs = m.limiterLookaheadMs;
     p.limiter.releaseMs = m.limiterReleaseMs;
+
+    // Whether anything is actually being applied, decided from the resolved
+    // values rather than from which preset was chosen. A preset is not
+    // inherently a passthrough; a preset with every slider at zero is, and so
+    // is any other preset the user has turned all the way down.
+    //
+    // 0.01 dB is the same threshold the chain uses to decide a filter is worth
+    // redesigning. Below it nothing is audible and the arithmetic is an
+    // identity anyway: a peaking or shelving section at 0 dB has numerator and
+    // denominator coefficients that are equal term for term.
+    constexpr double kAudible = 0.01;
+    bool anyProcessing = p.highpassEnabled || p.compressorEnabled || p.autoGain.enabled ||
+                         p.deEsser.enabled || std::abs(p.lowShelfGainDb) > kAudible ||
+                         std::abs(p.highShelfGainDb) > kAudible ||
+                         std::abs(p.inputGainDb) > kAudible ||
+                         std::abs(p.outputGainDb) > kAudible ||
+                         (p.midSideEnabled && std::abs(p.sideGainDb) > kAudible);
+    for (int i = 0; i < p.speechBandCount && !anyProcessing; ++i) {
+        anyProcessing = std::abs(p.speechBands[i].gainDb) > kAudible;
+    }
+    p.passthrough = !anyProcessing;
 
     return p;
 }

@@ -48,18 +48,45 @@ std::size_t msToFrames(std::uint32_t ms, std::uint32_t sampleRate) {
 // corrected the other way, swinging the ratio over ±1500 ppm on hardware whose
 // real difference was two orders of magnitude smaller.
 
-/// One-pole coefficient applied to the ring fill each render callback. At a
-/// ~10 ms callback this averages over several seconds, so scheduling jitter and
-/// the sawtooth of the ring filling and draining are both ignored.
-constexpr double kFillSmoothing = 0.005;
+/// One-pole coefficient applied to the ring fill each render callback, giving
+/// an average about fifteen seconds long.
+///
+/// It was a third of that, which was long enough for two real endpoints and far
+/// too short for a virtual cable. A cable is fed by whatever application is
+/// playing, not by a crystal, so its delivery is uneven in a way no soundcard's
+/// is: the fill wanders some twenty-five milliseconds either side of target
+/// with nothing wrong at all. Averaged over four seconds that wander reaches
+/// the loop nearly intact.
+constexpr double kFillSmoothing = 0.0015;
 
-/// Proportional gain from relative fill error to ratio trim. With this, a
-/// 20 ppm clock difference settles at a standing fill error of 0.4 % of the
-/// target — far too small to matter, and reached without overshoot.
-constexpr double kDriftGain = 0.005;
+/// Proportional gain from relative fill error to ratio trim.
+///
+/// Proportional alone, and that is enough. It settles with a standing fill
+/// error in proportion to the drift it is cancelling: at the 126 ppm measured
+/// through a virtual cable that is 13 % of the target, about five milliseconds
+/// of a ring with twenty-two to spare on each side.
+///
+/// Lowered from 0.005, which turned the cable's ordinary delivery wander into
+/// a trim swing of ±2800 ppm — past the ceiling below, so the loop spent its
+/// time saturated. At this gain the same wander asks for ±570 ppm and the
+/// ceiling stops being part of the picture. Trading five milliseconds of
+/// standing fill error for that is not a close call: the ring has the room, and
+/// a ratio that swings is a pitch that swings.
+///
+/// An integral term was added here and then removed. It was added to cancel a
+/// standing error believed to be 23 %, from a clock difference read as
+/// 1155 ppm; that reading came from a run in which overruns were discarding
+/// captured frames and idle top-ups were adding others, so the frame counts it
+/// was derived from were measuring the fault rather than the clocks. With the
+/// ring sized properly the same counts give 126 ppm.
+///
+/// It also did real harm. Its zero landed at 0.09 rad/s against a loop
+/// crossover of 0.10 rad/s, which cut the phase margin from 65° to roughly 25°
+/// and set the whole thing oscillating across most of the ring.
+constexpr double kDriftGain = 0.001;
 
-/// Trim ceiling. Two orders of magnitude beyond any real clock difference,
-/// so it only ever engages while recovering from a genuine disruption.
+/// Trim ceiling. Sixteen times the 126 ppm measured through a virtual cable,
+/// so it only engages while recovering from a genuine disruption.
 constexpr double kMaxTrim = 0.002;  // ±2000 ppm
 
 }  // namespace
@@ -100,8 +127,22 @@ bool AudioEngine::start(const EngineConfig& config, std::string* error) {
     renderSampleRate_ = render_.format().sampleRate;
     channels_ = std::max<std::uint32_t>(1, config_.internalChannels);
 
+    // Four capture periods, not two.
+    //
+    // Two is the smallest ring that can hold a packet at all, and it leaves no
+    // room for anything else: with the target at half, a single arriving packet
+    // fills it to the brim and a single render period empties it. Endpoints do
+    // not deliver on a metronome — a virtual cable least of all, since it is
+    // driven by whatever application is feeding it — so the fill swings by a
+    // whole period either way as a matter of course, and at two periods every
+    // one of those swings is an overrun or a gap.
+    //
+    // Four gives a period of slack above and below the target, which is what
+    // the ring is for. The cost is latency, and it is bounded: the target sits
+    // at half the ring, so this is two capture periods of delay rather than
+    // one.
     const std::size_t ringFrames = std::max<std::size_t>(msToFrames(config_.ringMs, sampleRate_),
-                                                         capture_.bufferFrames() * 2);
+                                                         capture_.bufferFrames() * 4);
     ring_ = std::make_unique<RingBuffer>(ringFrames, channels_);
     targetFillFrames_ = ringFrames / 2;
     capturePeriodFrames_ = capture_.bufferFrames();
@@ -357,6 +398,7 @@ void AudioEngine::renderLoop() {
 
         const auto target = static_cast<double>(targetFillFrames_);
         const double fillError = (smoothedFill_ - target) / target;
+
         // A ring filling up means capture is outrunning render, so more input
         // must be consumed per output frame: a lower ratio, i.e. trim below 1.
         const double trim = std::clamp(1.0 - kDriftGain * fillError, 1.0 - kMaxTrim, 1.0 + kMaxTrim);

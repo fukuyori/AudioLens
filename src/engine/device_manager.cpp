@@ -198,4 +198,55 @@ std::wstring resolveDeviceSelector(const std::string& selector, DeviceDirection 
     return fail(std::format("'{}' に一致するデバイスがありません", selector));
 }
 
+bool initializeSharedStream(IAudioClient* client, DWORD streamFlags, const WAVEFORMATEX* format,
+                            std::uint32_t requestedMs, const char* what, std::string* error) {
+    ComPtr<IAudioClient3> client3;
+    if (SUCCEEDED(client->QueryInterface(IID_PPV_ARGS(&client3)))) {
+        UINT32 defaultPeriod = 0;
+        UINT32 fundamental = 0;
+        UINT32 minPeriod = 0;
+        UINT32 maxPeriod = 0;
+        if (SUCCEEDED(client3->GetSharedModeEnginePeriod(format, &defaultPeriod, &fundamental,
+                                                         &minPeriod, &maxPeriod))) {
+            const auto wanted = static_cast<UINT32>(static_cast<std::uint64_t>(requestedMs) *
+                                                    format->nSamplesPerSec / 1000);
+            UINT32 period = std::clamp(wanted, minPeriod, maxPeriod);
+            // The driver only accepts whole multiples of its fundamental period,
+            // and rounding up rather than down keeps the result inside the range.
+            if (fundamental > 0) {
+                period = ((period + fundamental - 1) / fundamental) * fundamental;
+                period = std::clamp(period, minPeriod, maxPeriod);
+            }
+
+            const HRESULT hr =
+                client3->InitializeSharedAudioStream(streamFlags, period, format, nullptr);
+            if (SUCCEEDED(hr)) {
+                AL_DEBUG("{}: 低遅延パス / 周期 {} フレーム ({:.1f} ms、既定 {:.1f} / 最小 {:.1f})",
+                         what, period, 1000.0 * period / format->nSamplesPerSec,
+                         1000.0 * defaultPeriod / format->nSamplesPerSec,
+                         1000.0 * minPeriod / format->nSamplesPerSec);
+                return true;
+            }
+            // The periods are logged on the way past even when the request is
+            // refused: they say whether there was anything to gain here at all,
+            // which is not otherwise visible from outside.
+            AL_DEBUG("{}: 低遅延パスを使えません ({}) — 既定の周期で開きます "
+                     "(要求 {} / 既定 {} / 最小 {} / 最大 {} / 基本 {} フレーム)",
+                     what, hresultToString(hr), period, defaultPeriod, minPeriod, maxPeriod,
+                     fundamental);
+        }
+    }
+
+    const auto duration = static_cast<REFERENCE_TIME>(requestedMs) * 10000;
+    const HRESULT hr =
+        client->Initialize(AUDCLNT_SHAREMODE_SHARED, streamFlags, duration, 0, format, nullptr);
+    if (FAILED(hr)) {
+        if (error != nullptr) {
+            *error = std::format("{}の初期化に失敗: {}", what, hresultToString(hr));
+        }
+        return false;
+    }
+    return true;
+}
+
 }  // namespace audiolens

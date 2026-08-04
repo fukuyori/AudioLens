@@ -41,11 +41,10 @@ bool WasapiRender::open(const std::wstring& deviceId, std::uint32_t bufferMs, st
         return fail("再生側の音声フォーマットが未対応です");
     }
 
-    const REFERENCE_TIME duration = static_cast<REFERENCE_TIME>(bufferMs) * 10000;
-    hr = client_->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, duration,
-                             0, mix.get(), nullptr);
-    if (FAILED(hr)) {
-        return fail(std::format("再生クライアントの初期化に失敗: {}", hresultToString(hr)));
+    std::string initError;
+    if (!initializeSharedStream(client_.Get(), AUDCLNT_STREAMFLAGS_EVENTCALLBACK, mix.get(),
+                                bufferMs, "再生クライアント", &initError)) {
+        return fail(std::move(initError));
     }
 
     hr = client_->GetBufferSize(&bufferFrames_);

@@ -47,10 +47,10 @@ bool WasapiCapture::open(const std::wstring& deviceId, bool loopback, std::uint3
         flags |= AUDCLNT_STREAMFLAGS_LOOPBACK;
     }
 
-    const REFERENCE_TIME duration = static_cast<REFERENCE_TIME>(bufferMs) * 10000;
-    hr = client_->Initialize(AUDCLNT_SHAREMODE_SHARED, flags, duration, 0, mix.get(), nullptr);
-    if (FAILED(hr)) {
-        return fail(std::format("キャプチャクライアントの初期化に失敗: {}", hresultToString(hr)));
+    std::string initError;
+    if (!initializeSharedStream(client_.Get(), flags, mix.get(), bufferMs, "キャプチャクライアント",
+                                &initError)) {
+        return fail(std::move(initError));
     }
 
     hr = client_->GetBufferSize(&bufferFrames_);
