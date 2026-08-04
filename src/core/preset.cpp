@@ -269,7 +269,7 @@ Preset makeRock() {
     p.category = PresetCategory::Music;
     p.name = "ロック";
     p.description = "歪んだギターに埋もれがちなボーカルを前に出し、低音の飽和を整理します。";
-    p.sliders = {30, 40, 30};
+    p.sliders = {30, 40, 0};
 
     PresetMapping& m = p.mapping;
     // Rock lives on its low end; the highpass only clears what is below the
@@ -288,11 +288,9 @@ Preset makeRock() {
     // audible and would be a worse trade than the presence gained.
     m.midSideEnabled = true;
     m.sideGainAt100Db = 0.0;
-    m.autoGainEnabled = true;
-    m.autoGainTargetLufs = -16.0;
-    m.autoGainRangeAt100Db = 8.0;
-    // Already compressed on the record. Anything more than a light touch here
-    // is squashing something that was deliberately squashed once already.
+    // Off, like every music preset: the record was already compressed once on
+    // purpose, and a second pass is not an improvement on the first.
+    m.autoGainEnabled = false;
     m.compressorThresholdAt100Db = -20.0;
     m.compressorRatioAt100 = 3.0;
     m.compressorAttackMs = 20.0;
@@ -306,7 +304,7 @@ Preset makeJazz() {
     p.category = PresetCategory::Music;
     p.name = "ジャズ";
     p.description = "小編成の各楽器の輪郭を保ったまま、角張った高域だけを丸めます。";
-    p.sliders = {20, 30, 20};
+    p.sliders = {20, 30, 0};
 
     PresetMapping& m = p.mapping;
     m.highpassFreqAt100Hz = 50.0;  // double bass goes low; leave it there
@@ -323,9 +321,7 @@ Preset makeJazz() {
     // is as likely to be hard left as the drums are to be centre, so lifting
     // the mid would pick an instrument at random.
     m.midSideEnabled = false;
-    m.autoGainEnabled = true;
-    m.autoGainTargetLufs = -18.0;
-    m.autoGainRangeAt100Db = 8.0;
+    m.autoGainEnabled = false;
     m.compressorThresholdAt100Db = -22.0;
     m.compressorRatioAt100 = 2.5;
     m.compressorAttackMs = 30.0;   // let the attack of a struck note through
@@ -339,7 +335,7 @@ Preset makeClassical() {
     p.category = PresetCategory::Music;
     p.name = "クラシック";
     p.description = "ダイナミクスとホールの響きを最大限残し、必要最小限だけ触ります。";
-    p.sliders = {15, 20, 25};
+    p.sliders = {15, 20, 0};
 
     PresetMapping& m = p.mapping;
     // An orchestra's bottom octave is real content, not rumble.
@@ -354,13 +350,10 @@ Preset makeClassical() {
     // Off, emphatically. The spatial information in a hall recording is most of
     // what distinguishes it from a studio one, and it lives in the sides.
     m.midSideEnabled = false;
-    // The one place a slow stage genuinely helps: a pianissimo movement and the
-    // finale of the same symphony can be twenty dB apart, and no compressor
-    // setting gentle enough to leave the music alone can span that.
-    m.autoGainEnabled = true;
-    m.autoGainTargetLufs = -20.0;
-    m.autoGainRangeAt100Db = 10.0;
-    // The lightest compression of any preset. Dynamics *are* the performance.
+    // A pianissimo movement and the finale of the same symphony can be twenty
+    // dB apart, and closing that gap is the one thing this preset must never
+    // do. Dynamics *are* the performance.
+    m.autoGainEnabled = false;
     m.compressorThresholdAt100Db = -24.0;
     m.compressorRatioAt100 = 3.0;
     m.compressorAttackMs = 40.0;
@@ -373,8 +366,8 @@ Preset makeAmbient() {
     p.id = "ambient";
     p.category = PresetCategory::Music;
     p.name = "アンビエント";
-    p.description = "小さな音量でも細部が消えないよう持ち上げ、広がりはそのまま保ちます。";
-    p.sliders = {20, 15, 35};
+    p.description = "高域の細部を少し起こし、広がりと音量の起伏はそのまま保ちます。";
+    p.sliders = {20, 15, 0};
 
     PresetMapping& m = p.mapping;
     m.highpassFreqAt100Hz = 45.0;
@@ -387,11 +380,10 @@ Preset makeAmbient() {
     m.highShelfGainAt100Db = 1.0;
     // Off. Width is not incidental to this music, it is the point of it.
     m.midSideEnabled = false;
-    // Ambient records are often mastered very quietly, and that is the whole
-    // reason this stage exists.
-    m.autoGainEnabled = true;
-    m.autoGainTargetLufs = -20.0;
-    m.autoGainRangeAt100Db = 12.0;
+    // Ambient records are often mastered very quietly. That is a job for the
+    // volume control, not for a stage that would also flatten the swells the
+    // music is made of.
+    m.autoGainEnabled = false;
     m.compressorThresholdAt100Db = -26.0;
     m.compressorRatioAt100 = 3.0;
     m.compressorAttackMs = 50.0;

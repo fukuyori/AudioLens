@@ -127,26 +127,38 @@ bool AudioEngine::start(const EngineConfig& config, std::string* error) {
     renderSampleRate_ = render_.format().sampleRate;
     channels_ = std::max<std::uint32_t>(1, config_.internalChannels);
 
-    // Four capture periods, not two.
+    // Capacity and target fill are sized separately, and that separation is the
+    // point.
     //
-    // Two is the smallest ring that can hold a packet at all, and it leaves no
-    // room for anything else: with the target at half, a single arriving packet
-    // fills it to the brim and a single render period empties it. Endpoints do
-    // not deliver on a metronome — a virtual cable least of all, since it is
-    // driven by whatever application is feeding it — so the fill swings by a
-    // whole period either way as a matter of course, and at two periods every
-    // one of those swings is an overrun or a gap.
+    // Latency is set by the *target*: audio waits there and nowhere else. Safety
+    // is set by the *capacity*: an overrun is the fill reaching the top and an
+    // underrun is it reaching the bottom. Tying the target to half the capacity,
+    // as this did, means every millisecond of safety costs a millisecond of
+    // delay — so it was sized to whichever mattered more and was short of the
+    // other.
     //
-    // Four gives a period of slack above and below the target, which is what
-    // the ring is for. The cost is latency, and it is bounded: the target sits
-    // at half the ring, so this is two capture periods of delay rather than
-    // one.
-    const std::size_t ringFrames = std::max<std::size_t>(msToFrames(config_.ringMs, sampleRate_),
-                                                         capture_.bufferFrames() * 4);
+    // Measured through a virtual cable over three minutes, the fill swung forty
+    // milliseconds above target with nothing wrong: a cable is fed by whatever
+    // application is playing, not by a crystal. Against a capacity of 88 ms that
+    // left four milliseconds of headroom, which is not a margin, it is luck.
+    //
+    // Two periods of target is what the delay is worth; six of capacity is what
+    // the delivery demands.
+    const std::size_t period = capture_.bufferFrames();
+    const std::size_t ringFrames =
+        std::max<std::size_t>(msToFrames(config_.ringMs, sampleRate_), period * 6);
     ring_ = std::make_unique<RingBuffer>(ringFrames, channels_);
-    targetFillFrames_ = ringFrames / 2;
+
+    // Kept clear of both ends even if a caller asks for an unusually small ring.
+    targetFillFrames_ = std::clamp<std::size_t>(period * 2, period, ringFrames - period);
     capturePeriodFrames_ = capture_.bufferFrames();
     smoothedFill_ = static_cast<double>(targetFillFrames_);
+    ringFillMin_ = ringFrames;
+    ringFillMax_ = 0;
+    ringReachedTarget_ = false;
+    ringFillMinFrames_.store(static_cast<std::uint32_t>(ringFrames), std::memory_order_relaxed);
+    ringFillMaxFrames_.store(0, std::memory_order_relaxed);
+    ringCapacityFrames_.store(static_cast<std::uint32_t>(ringFrames), std::memory_order_relaxed);
 
     resampler_ = std::make_unique<dsp::Resampler>();
     resampler_->prepare(channels_,
@@ -167,7 +179,11 @@ bool AudioEngine::start(const EngineConfig& config, std::string* error) {
     // every idle moment turns into a stream of underruns.
     const double capturePeriodMs = 1000.0 * capture_.bufferFrames() / sampleRate_;
     const double renderPeriodMs = 1000.0 * render_.bufferFrames() / sampleRate_;
-    captureWaitMs_ = std::max<DWORD>(1, static_cast<DWORD>(capturePeriodMs / 2.0));
+    // A quarter of a period, not a half. This timeout is also how quickly the
+    // idle top-up notices that a loopback endpoint has gone quiet, and the ring
+    // drains in real time while it waits: at half a period, two wakes were up to
+    // a full period of draining before anything was put back.
+    captureWaitMs_ = std::max<DWORD>(1, static_cast<DWORD>(capturePeriodMs / 4.0));
     renderWaitMs_ = std::max<DWORD>(20, static_cast<DWORD>(renderPeriodMs * 4.0));
 
     if (processor_ != nullptr) {
@@ -393,8 +409,31 @@ void AudioEngine::renderLoop() {
         // The fill is smoothed first. Reacting to the raw value would modulate
         // the ratio with every scheduling hiccup, which is audible as warble on
         // sustained tones — the very thing this scheme exists to avoid.
-        const auto rawFill = static_cast<double>(ring_->availableToRead());
+        const std::size_t fillFrames = ring_->availableToRead();
+        const auto rawFill = static_cast<double>(fillFrames);
         smoothedFill_ += kFillSmoothing * (rawFill - smoothedFill_);
+
+        // Recorded every callback, not every time somebody asks: an overrun is
+        // decided in the one callback where the fill peaked, and a reader
+        // sampling twice a second will never see it.
+        //
+        // The low mark only starts counting once the ring has filled to target
+        // for the first time. Before that it is empty by construction, and
+        // recording zero there would report no margin at all on every run
+        // regardless of how the run then went.
+        if (!ringReachedTarget_ && fillFrames >= targetFillFrames_) {
+            ringReachedTarget_ = true;
+        }
+        if (ringReachedTarget_ && fillFrames < ringFillMin_) {
+            ringFillMin_ = fillFrames;
+            ringFillMinFrames_.store(static_cast<std::uint32_t>(fillFrames),
+                                     std::memory_order_relaxed);
+        }
+        if (fillFrames > ringFillMax_) {
+            ringFillMax_ = fillFrames;
+            ringFillMaxFrames_.store(static_cast<std::uint32_t>(fillFrames),
+                                     std::memory_order_relaxed);
+        }
 
         const auto target = static_cast<double>(targetFillFrames_);
         const double fillError = (smoothedFill_ - target) / target;
@@ -467,6 +506,12 @@ EngineStats AudioEngine::stats() const {
         if (ring_) {
             s.ringFillMs = 1000.0 * static_cast<double>(ring_->availableToRead()) / rate;
         }
+        s.ringFillMinMs =
+            1000.0 * ringFillMinFrames_.load(std::memory_order_relaxed) / rate;
+        s.ringFillMaxMs =
+            1000.0 * ringFillMaxFrames_.load(std::memory_order_relaxed) / rate;
+        s.ringCapacityMs =
+            1000.0 * ringCapacityFrames_.load(std::memory_order_relaxed) / rate;
         s.renderPaddingMs =
             1000.0 * static_cast<double>(lastRenderPadding_.load(std::memory_order_relaxed)) / rate;
     }

@@ -70,6 +70,17 @@ struct EngineStats {
     double driftPpm = 0.0;
 
     double ringFillMs = 0.0;
+
+    /// How close the ring has come to each end since the engine started.
+    ///
+    /// The instantaneous fill is sampled by whoever asks, which misses exactly
+    /// the moments that matter: the ring is only ever a problem at its
+    /// extremes, and those are brief. These are the high-water marks, and the
+    /// distance from them to 0 and to the ring's capacity is the margin the
+    /// configuration is actually running on.
+    double ringFillMinMs = 0.0;
+    double ringFillMaxMs = 0.0;
+    double ringCapacityMs = 0.0;
     double captureLatencyMs = 0.0;
     double renderLatencyMs = 0.0;
     double renderPaddingMs = 0.0;
@@ -154,6 +165,11 @@ private:
     /// it keeps ordinary jitter from modulating the ratio.
     double smoothedFill_ = 0.0;
 
+    /// High-water marks, owned by the render thread and published for reading.
+    std::size_t ringFillMin_ = 0;
+    std::size_t ringFillMax_ = 0;
+    bool ringReachedTarget_ = false;
+
     std::thread captureThread_;
     std::thread renderThread_;
     std::atomic<bool> stopRequested_{false};
@@ -172,6 +188,9 @@ private:
     std::atomic<double> driftPpm_{0.0};
 
     std::atomic<std::uint32_t> lastRenderPadding_{0};
+    std::atomic<std::uint32_t> ringFillMinFrames_{0};
+    std::atomic<std::uint32_t> ringFillMaxFrames_{0};
+    std::atomic<std::uint32_t> ringCapacityFrames_{0};
 };
 
 }  // namespace audiolens

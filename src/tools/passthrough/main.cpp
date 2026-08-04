@@ -467,6 +467,13 @@ int main(int argc, char** argv) {
     std::printf("  無音補填      : %llu フレーム\n",
                 static_cast<unsigned long long>(final.silenceFills));
     std::printf("  推定遅延      : %.1f ms\n", final.estimatedLatencyMs());
+    // The margin, stated plainly. An overrun is the fill reaching capacity and
+    // an underrun is it reaching zero, so how close it came to either is the
+    // only honest answer to "is this configuration safe?".
+    std::printf("  リング容量    : %.1f ms\n", final.ringCapacityMs);
+    std::printf("  リング充填    : 最小 %.1f / 最大 %.1f ms  (余裕 下 %.1f / 上 %.1f ms)\n",
+                final.ringFillMinMs, final.ringFillMaxMs, final.ringFillMinMs,
+                final.ringCapacityMs - final.ringFillMaxMs);
     std::printf("  サンプルレート: 取込 %u Hz / 再生 %u Hz%s\n", final.captureSampleRate,
                 final.renderSampleRate,
                 final.captureSampleRate == final.renderSampleRate ? "" : "(変換あり)");
