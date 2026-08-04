@@ -79,6 +79,12 @@ $bin = ".\build\release\bin"
 
 VB-Cable などの仮想オーディオデバイスを手動でインストールし、それをシステム既定の出力にしたうえで `--capture` に指定する。自作ドライバ(M4)は凍結したため、この構成が最終形になる。
 
+## ライセンス
+
+**Apache License 2.0**([LICENSE](LICENSE))。ただし `driver/` は例外で、**Microsoft Public License (MS-PL)** である。
+
+`driver/` は Microsoft の [Windows-driver-samples](https://github.com/microsoft/Windows-driver-samples) の `audio/simpleaudiosample` に由来する。MS-PL 3(D) はソース形式での配布を MS-PL 下に置くことを求めるため、この部分だけ Apache 2.0 の許諾から外れる。各ファイルの Microsoft 著作権表示は保持すること。詳細は [NOTICE](NOTICE) と [driver/LICENSE-MS-PL.txt](driver/LICENSE-MS-PL.txt)。
+
 ## ドキュメント
 
 | ドキュメント | 内容 |

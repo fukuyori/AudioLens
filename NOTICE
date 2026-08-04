@@ -1,0 +1,26 @@
+AudioLens
+Copyright 2026 Noriaki Fukuyori
+
+This product includes software developed by Noriaki Fukuyori, licensed under
+the Apache License, Version 2.0 (see LICENSE).
+
+--------------------------------------------------------------------------------
+driver/ — Microsoft Public License (MS-PL), not Apache 2.0
+--------------------------------------------------------------------------------
+
+The contents of the driver/ directory are derived from the Simple Audio Sample
+driver in the Microsoft Windows-driver-samples repository:
+
+    https://github.com/microsoft/Windows-driver-samples
+    audio/simpleaudiosample
+    Copyright (c) Microsoft Corporation. All rights reserved.
+
+That code is licensed under the Microsoft Public License, and the derived work
+in driver/ remains under it. The full text is in driver/LICENSE-MS-PL.txt.
+
+MS-PL section 3(D) requires that source distributions of this code stay under
+MS-PL, so driver/ is excluded from the Apache 2.0 grant that covers the rest of
+this repository. The Microsoft copyright notices in those files must be kept.
+
+The driver is not built or used; it is retained as a record of work that was
+completed and then set aside. See driver/README.md.
