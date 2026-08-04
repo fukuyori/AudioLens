@@ -70,6 +70,7 @@ void DspChain::prepare(std::uint32_t sampleRate, std::uint32_t channels,
     }
     highShelf_.prepare(channels_);
 
+    deEsser_.prepare(sampleRate_, channels_);
     autoGain_.prepare(sampleRate_, channels_);
     compressor_.prepare(sampleRate_);
     limiter_.prepare(sampleRate_, channels_);
@@ -153,6 +154,7 @@ void DspChain::updateSmoothedTargets() noexcept {
     // three take settings changes directly.
     current_.compressorEnabled = target_.compressorEnabled;
     current_.compressor = target_.compressor;
+    current_.deEsser = target_.deEsser;
     current_.autoGain = target_.autoGain;
     current_.limiter = target_.limiter;
 }
@@ -171,7 +173,8 @@ bool DspChain::coefficientsNeedRebuild() const noexcept {
         current_.speechBandCount != built_.speechBandCount ||
         current_.compressorEnabled != built_.compressorEnabled ||
         current_.midSideEnabled != built_.midSideEnabled ||
-        !(current_.autoGain == built_.autoGain) || !(current_.compressor == built_.compressor) ||
+        !(current_.autoGain == built_.autoGain) || !(current_.deEsser == built_.deEsser) ||
+        !(current_.compressor == built_.compressor) ||
         !(current_.limiter == built_.limiter)) {
         return true;
     }
@@ -224,6 +227,7 @@ void DspChain::rebuildCoefficients() noexcept {
     highShelf_.setCoeffs(designHighShelf(current_.highShelfFreqHz, current_.highShelfGainDb,
                                          current_.highShelfQ, rate));
 
+    deEsser_.setSettings(current_.deEsser);
     autoGain_.setSettings(current_.autoGain);
     compressor_.setSettings(current_.compressor);
     limiter_.setSettings(current_.limiter);
@@ -325,6 +329,9 @@ void DspChain::process(float* audio, std::size_t frames, std::uint32_t channels)
             for (std::uint32_t c = 0; c < active; ++c) {
                 frame[c] = highShelf_.perChannel[c].process(frame[c]);
             }
+
+            // --- undo the sharpness the speech bands just added ---
+            deEsser_.processFrame(frame, active);
 
             // --- levelling: fast first, then slow ---
             // The order matters and it is not the obvious one. Putting the slow

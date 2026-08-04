@@ -61,6 +61,17 @@ struct PresetMapping {
     double autoGainRiseDbPerSecond = 0.05;
     double autoGainFallDbPerSecond = 0.10;
 
+    /// Sibilance control, driven by the same slider that creates the problem.
+    /// At a clarity of 0 the speech bands are flat and there is nothing extra
+    /// to tame, so the stage scales with the slider rather than sitting at a
+    /// fixed strength.
+    bool deEsserEnabled = false;
+    double deEsserFreqHz = 6500.0;
+    double deEsserQ = 1.0;
+    double deEsserThresholdDb = -14.0;
+    double deEsserAmountAt100 = 0.7;
+    double deEsserMaxReductionAt100Db = 8.0;
+
     // --- 音量差 ---
     double compressorThresholdAt0Db = -12.0;
     double compressorThresholdAt100Db = -32.0;

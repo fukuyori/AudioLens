@@ -35,6 +35,12 @@ Preset makeConversation() {
     m.autoGainEnabled = true;
     m.autoGainTargetLufs = -18.0;
     m.autoGainRangeAt100Db = 10.0;
+    // The heaviest speech lift of any preset (+6 dB at 2.6 kHz), so the most
+    // sibilance to take back out.
+    m.deEsserEnabled = true;
+    m.deEsserFreqHz = 6800.0;
+    m.deEsserAmountAt100 = 0.8;
+    m.deEsserMaxReductionAt100Db = 9.0;
     m.compressorThresholdAt100Db = -30.0;
     m.compressorRatioAt100 = 6.0;
     m.compressorAttackMs = 8.0;
@@ -68,6 +74,10 @@ Preset makeLecture() {
     m.autoGainRangeAt100Db = 8.0;
     m.autoGainRiseDbPerSecond = 0.04;
     m.autoGainFallDbPerSecond = 0.08;
+    // This preset's whole promise is that an hour of it is not tiring, and
+    // sharpened sibilants are the fastest way to break that promise.
+    m.deEsserEnabled = true;
+    m.deEsserThresholdDb = -15.0;
     m.compressorThresholdAt100Db = -26.0;
     m.compressorRatioAt100 = 4.0;
     m.compressorAttackMs = 15.0;
@@ -105,6 +115,11 @@ Preset makeMovie() {
     m.autoGainRangeAt100Db = 12.0;
     m.autoGainRiseDbPerSecond = 0.05;
     m.autoGainFallDbPerSecond = 0.10;
+    // Lighter than the speech presets: a film mix has usually been de-essed
+    // once already, and taking more out of it dulls the effects track too.
+    m.deEsserEnabled = true;
+    m.deEsserAmountAt100 = 0.5;
+    m.deEsserMaxReductionAt100Db = 5.0;
     // A low threshold with a slow release is what actually closes the gap
     // between whispered dialogue and an explosion.
     m.compressorThresholdAt100Db = -34.0;
@@ -140,6 +155,7 @@ Preset makeNight() {
     m.autoGainRangeAt100Db = 14.0;
     m.autoGainRiseDbPerSecond = 0.08;
     m.autoGainFallDbPerSecond = 0.16;
+    m.deEsserEnabled = true;
     m.compressorThresholdAt100Db = -40.0;
     m.compressorRatioAt100 = 10.0;
     m.compressorAttackMs = 8.0;
@@ -174,6 +190,14 @@ Preset makeOldRecording() {
     m.autoGainEnabled = true;
     m.autoGainTargetLufs = -18.0;
     m.autoGainRangeAt100Db = 10.0;
+    // Worst case in the set: a big speech lift *and* a +4 dB shelf at 6 kHz,
+    // both landing squarely on the sibilant band. Centred lower to match where
+    // the shelf sits.
+    m.deEsserEnabled = true;
+    m.deEsserFreqHz = 6000.0;
+    m.deEsserThresholdDb = -13.0;
+    m.deEsserAmountAt100 = 0.8;
+    m.deEsserMaxReductionAt100Db = 10.0;
     m.compressorThresholdAt100Db = -28.0;
     m.compressorRatioAt100 = 5.0;
     m.compressorAttackMs = 12.0;
@@ -204,6 +228,9 @@ Preset makeStandard() {
     m.autoGainRangeAt100Db = 6.0;
     m.autoGainRiseDbPerSecond = 0.04;
     m.autoGainFallDbPerSecond = 0.08;
+    m.deEsserEnabled = true;
+    m.deEsserAmountAt100 = 0.5;
+    m.deEsserMaxReductionAt100Db = 5.0;
     m.compressorThresholdAt100Db = -24.0;
     m.compressorRatioAt100 = 3.0;
     return p;
@@ -411,6 +438,15 @@ dsp::DspParameters resolveParameters(const Preset& preset, const SliderValues& r
     // waste of arithmetic. Below the threshold it is switched out instead.
     p.midSideEnabled = m.midSideEnabled && clarity > 0.02;
     p.sideGainDb = lerp(0.0, m.sideGainAt100Db, clarity);
+
+    // Scaled by the clarity slider for the same reason it exists at all: the
+    // sharpness it removes is the sharpness that slider put there.
+    p.deEsser.enabled = m.deEsserEnabled && clarity > 0.02;
+    p.deEsser.frequencyHz = m.deEsserFreqHz;
+    p.deEsser.q = m.deEsserQ;
+    p.deEsser.thresholdDb = m.deEsserThresholdDb;
+    p.deEsser.amount = lerp(0.0, m.deEsserAmountAt100, clarity);
+    p.deEsser.maxReductionDb = lerp(0.0, m.deEsserMaxReductionAt100Db, clarity);
 
     // --- 音量差 ---
     // Two stages on two time scales. The slow one takes out the difference

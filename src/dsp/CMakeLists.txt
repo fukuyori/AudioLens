@@ -5,6 +5,8 @@ add_library(audiolens_dsp STATIC
     biquad.h
     compressor.cpp
     compressor.h
+    de_esser.cpp
+    de_esser.h
     dsp_chain.cpp
     dsp_chain.h
     k_weighting.cpp

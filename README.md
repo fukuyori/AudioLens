@@ -1,4 +1,4 @@
-# AudioLens 0.1.1
+# AudioLens 0.1.2
 
 PC で再生される音声を、用途に合わせて聞き取りやすく調整するプリセット型オーディオ補助アプリ(Windows)。
 
@@ -69,11 +69,12 @@ $bin = ".\build\release\bin"
 # WAV に対してオフラインで処理し、効果を数値で確認する
 & $bin\audiolens_process.exe --input in.wav --output out.wav --preset movie
 
-# 段ごとの寄与を切り分ける(ミッド/サイド・遅いレベリングを個別に外す)
+# 段ごとの寄与を切り分ける(ミッド/サイド・遅いレベリング・ディエッサーを個別に外す)
 & $bin\audiolens_process.exe --input in.wav --output out.wav --preset movie --no-midside
 & $bin\audiolens_process.exe --input in.wav --output out.wav --preset movie --no-autogain
+& $bin\audiolens_process.exe --input in.wav --output out.wav --preset movie --no-deesser
 
-# 単体テスト(ハードウェア不要、96 件)
+# 単体テスト(ハードウェア不要、101 件)
 & $bin\audiolens_tests.exe
 
 # プロセスループバック検証(案 E の判定に使った。結論は不成立)
@@ -108,7 +109,7 @@ src/app/               Qt 6 の GUI(メイン画面、トレイ常駐、設定�
 src/common/            ログ、COM/ハンドルの RAII ラッパー、denormal 対策
 src/engine/            WASAPI キャプチャ/再生、リングバッファ、形式変換
 src/dsp/               フィルタ、コンプレッサー、リミッター、ミッド/サイド、
-                       遅いレベリング、DSP チェーン
+                       ディエッサー、遅いレベリング、DSP チェーン
 src/core/              プリセットとスライダーのマッピング
 src/analysis/          ラウドネス測定 (ITU-R BS.1770-4 / EBU R128)
 src/audiofile/         WAV 入出力

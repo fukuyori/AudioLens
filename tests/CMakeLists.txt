@@ -3,6 +3,7 @@ add_executable(audiolens_tests
     test_support.h
     test_audio_format.cpp
     test_auto_gain.cpp
+    test_de_esser.cpp
     test_dsp_chain.cpp
     test_mid_side.cpp
     test_dsp_filters.cpp

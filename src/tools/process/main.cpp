@@ -97,6 +97,7 @@ int main(int argc, char** argv) {
     int leveling = -1;
     bool noAutoGain = false;
     bool noMidSide = false;
+    bool noDeEsser = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -133,6 +134,8 @@ int main(int argc, char** argv) {
             noAutoGain = true;
         } else if (arg == "--no-midside") {
             noMidSide = true;
+        } else if (arg == "--no-deesser") {
+            noDeEsser = true;
         } else if (arg == "--list-presets") {
             printPresetList();
             return 0;
@@ -189,6 +192,7 @@ int main(int argc, char** argv) {
         audiolens::dsp::DspParameters parameters = resolveParameters(*preset, sliders);
         if (noAutoGain) parameters.autoGain.enabled = false;
         if (noMidSide) parameters.midSideEnabled = false;
+        if (noDeEsser) parameters.deEsser.enabled = false;
         chain.setParameters(parameters);
         // prepare() settled on whatever was published before; re-settle so the
         // measurement is not skewed by a 40 ms ramp at the head of the file.

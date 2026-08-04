@@ -3,6 +3,7 @@
 #include "dsp/auto_gain.h"
 #include "dsp/biquad.h"
 #include "dsp/compressor.h"
+#include "dsp/de_esser.h"
 #include "dsp/limiter.h"
 #include "dsp/parameters.h"
 #include "engine/audio_engine.h"
@@ -26,7 +27,8 @@ struct LevelSnapshot {
 /// The AudioLens processing chain:
 ///
 ///     input gain -> highpass -> low shelf -> speech bands -> high shelf
-///                -> compressor -> auto gain -> output gain -> limiter
+///                -> de-esser -> compressor -> auto gain -> output gain
+///                -> limiter
 ///
 /// Filters run per channel, except that the speech bands can run on the mid
 /// channel alone (see DspParameters::midSideEnabled). The auto gain,
@@ -55,6 +57,9 @@ public:
 
     /// Current compressor gain reduction in dB, for metering. Never positive.
     double gainReductionDb() const noexcept;
+
+    /// Reduction the de-esser is currently applying, in dB. Never positive.
+    double deEsserReductionDb() const noexcept { return deEsser_.currentReductionDb(); }
 
     /// What the slow levelling stage is doing: the gain it currently holds, and
     /// the short-term loudness it measured to arrive at it.
@@ -97,6 +102,7 @@ private:
     FilterStage lowShelf_;
     std::array<FilterStage, kMaxSpeechBands> speechBands_;
     FilterStage highShelf_;
+    DeEsser deEsser_;
     AutoGain autoGain_;
     Compressor compressor_;
     Limiter limiter_;

@@ -2,6 +2,7 @@
 
 #include "dsp/auto_gain.h"
 #include "dsp/compressor.h"
+#include "dsp/de_esser.h"
 #include "dsp/limiter.h"
 
 #include <cstdint>
@@ -57,6 +58,10 @@ struct DspParameters {
     double highShelfFreqHz = 8000.0;
     double highShelfGainDb = 0.0;
     double highShelfQ = 0.707;
+
+    /// Tames the sibilance the speech bands above have just emphasised. Sits
+    /// directly after them, because that is where the problem is created.
+    DeEsserSettings deEsser{};
 
     /// Slow levelling, ahead of the compressor. The two work on different time
     /// scales on purpose: this one on scene-to-scene differences, the
