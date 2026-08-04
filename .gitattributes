@@ -1,0 +1,15 @@
+# 既定はテキストとして扱い、リポジトリ内では LF に正規化する。
+# 作業コピーの改行は各自の core.autocrlf に任せる。
+* text=auto
+
+# INF のソースは UTF-16 LE でなければならない (stampinf の要求)。
+# text 扱いにすると改行変換で BOM 以降がずれ、ビルドが通らなくなる。
+*.inx binary
+
+# Visual Studio が書き戻すファイル。LF に正規化すると、開くたびに
+# 差分が出て中身の変更が埋もれる。
+*.sln       text eol=crlf
+*.vcxproj   text eol=crlf
+*.Filters   text eol=crlf
+*.props     text eol=crlf
+*.config    text eol=crlf

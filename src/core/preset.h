@@ -1,0 +1,83 @@
+#pragma once
+
+#include "dsp/parameters.h"
+
+#include <string>
+#include <vector>
+
+namespace audiolens {
+
+/// What the user sees: three plain-language amounts, each 0-100.
+/// Nothing in this struct mentions a frequency or a decibel.
+struct SliderValues {
+    int bass = 50;      ///< 「低音」  0 = 低音そのまま、100 = 濁りを強く抑える
+    int clarity = 50;   ///< 「声の明瞭さ」
+    int leveling = 50;  ///< 「音量差」  0 = 整えない、100 = 強く揃える
+
+    SliderValues clamped() const;
+};
+
+/// How a preset turns the three sliders into DSP settings.
+///
+/// Every field here is an endpoint of an interpolation: a slider at 0 gives the
+/// `...At0` value, at 100 the `...At100` value, and in between a straight line.
+/// Keeping the mapping as data rather than code is what lets a preset be
+/// retuned, and eventually loaded from JSON, without touching the DSP.
+struct PresetMapping {
+    // --- 低音 ---
+    /// Highpass corner at slider 100. The filter is off at slider 0.
+    double highpassFreqAt100Hz = 120.0;
+    double highpassQ = 0.707;
+    double lowShelfFreqHz = 220.0;
+    double lowShelfGainAt0Db = 0.0;
+    double lowShelfGainAt100Db = -3.0;
+    double lowShelfQ = 0.707;
+
+    // --- 声の明瞭さ ---
+    /// Peaking bands lifted in proportion to the clarity slider. `gainDb` in
+    /// each band is the gain at slider 100.
+    std::vector<dsp::SpeechBand> speechBandsAt100;
+    double highShelfFreqHz = 7000.0;
+    double highShelfGainAt0Db = 0.0;
+    double highShelfGainAt100Db = 0.0;
+    double highShelfQ = 0.707;
+
+    // --- 音量差 ---
+    double compressorThresholdAt0Db = -12.0;
+    double compressorThresholdAt100Db = -32.0;
+    double compressorRatioAt0 = 1.0;
+    double compressorRatioAt100 = 6.0;
+    double compressorKneeDb = 8.0;
+    double compressorAttackMs = 10.0;
+    double compressorReleaseMs = 250.0;
+    double compressorMakeupReferenceDb = -18.0;
+
+    // --- 固定 ---
+    double outputGainDb = 0.0;
+    double limiterCeilingDb = -1.0;
+    double limiterLookaheadMs = 2.0;
+    double limiterReleaseMs = 60.0;
+};
+
+struct Preset {
+    std::string id;
+    std::string name;         ///< Display name, Japanese.
+    std::string description;  ///< One line explaining when to reach for it.
+    SliderValues sliders;
+    PresetMapping mapping;
+};
+
+/// Folds a preset and a set of slider positions into the values the DSP chain
+/// runs on.
+dsp::DspParameters resolveParameters(const Preset& preset, const SliderValues& sliders);
+
+/// Same, using the preset's own slider positions.
+dsp::DspParameters resolveParameters(const Preset& preset);
+
+/// The presets shipped with AudioLens, in the order they should be offered.
+const std::vector<Preset>& builtinPresets();
+
+/// Looks a preset up by id (e.g. "movie"). Returns nullptr if there is none.
+const Preset* findBuiltinPreset(const std::string& id);
+
+}  // namespace audiolens

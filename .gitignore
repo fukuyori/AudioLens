@@ -1,0 +1,24 @@
+build/
+out/
+.vs/
+.vscode/
+CMakeUserPresets.json
+*.user
+*.aps
+*.pdb
+*.ilk
+*.exp
+
+# ドライバ (M4、中止): NuGet 版 WDK の展開先とビルド成果物。
+# ソースと INF は記録として残すが、生成物は追跡しない。
+driver/packages/
+driver/x64/
+driver/ARM64/
+driver/*/x64/
+driver/*/ARM64/
+driver/*/*/x64/
+driver/*/*/ARM64/
+
+# install.ps1 がカタログから取り出す署名者証明書。パッケージ内の
+# カタログに含まれているものの複製にすぎない。
+driver/signer/
