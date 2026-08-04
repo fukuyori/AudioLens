@@ -50,12 +50,21 @@ private:
     void selectPresetById(const QString& id);
     void onPresetSelectionChanged();
     void onSliderChanged();
+    void onOutputVolumeChanged();
     void onDeviceChanged();
     void onPowerToggled(bool on);
     void onSaveUserPreset();
     void onDeleteUserPreset();
     void onStartWithWindowsToggled(bool enabled);
     void onTakeOverToggled(bool enabled);
+    void onRememberDeviceToggled(bool enabled);
+
+    // --- device-linked presets (requirement F-13) ---
+    /// Applies whatever was remembered for `renderDeviceId`, if anything.
+    void applyDeviceProfile(const QString& renderDeviceId);
+    /// Writes the current preset, amounts and volume into the profile for the
+    /// current output device, when that device is being remembered.
+    void storeDeviceProfile();
 
     // --- default device (requirement N-04) ---
     /// Makes the capture device the system default, recording what it displaced
@@ -103,6 +112,9 @@ private:
     QLabel* clarityValue_ = nullptr;
     QLabel* levelingValue_ = nullptr;
 
+    QSlider* volumeSlider_ = nullptr;
+    QLabel* volumeValue_ = nullptr;
+
     LevelMeter* inputMeter_ = nullptr;
     LevelMeter* outputMeter_ = nullptr;
     GainReductionMeter* reductionMeter_ = nullptr;
@@ -112,6 +124,12 @@ private:
     QComboBox* renderCombo_ = nullptr;
     QCheckBox* startWithWindowsCheck_ = nullptr;
     QCheckBox* takeOverCheck_ = nullptr;
+    QCheckBox* rememberDeviceCheck_ = nullptr;
+
+    /// The output device whose profile has already been applied. Without it,
+    /// every settings change would look like a device change and re-apply the
+    /// profile over whatever the user had just adjusted.
+    QString appliedProfileDeviceId_;
 
     QPushButton* powerButton_ = nullptr;
     QPushButton* compareButton_ = nullptr;

@@ -61,7 +61,11 @@ public:
     void stop();
     bool running() const { return engine_.running(); }
 
-    void applyPreset(const Preset& preset, const SliderValues& sliders);
+    /// `outputVolume` is the master level, 0-100 (requirement F-22). It is
+    /// folded in here rather than baked into the preset: the preset says how the
+    /// sound should be shaped, the master says how loud the result should be,
+    /// and changing preset should not change the volume.
+    void applyPreset(const Preset& preset, const SliderValues& sliders, int outputVolume);
 
     /// Bypasses the processing without changing the signal path or its latency,
     /// so a listener comparing the two is hearing only the processing.

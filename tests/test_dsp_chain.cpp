@@ -410,3 +410,43 @@ AL_TEST(DspChain_adds_no_latency_when_nothing_is_applied) {
     chain.process(audio.data(), audio.size() / kChannels, kChannels);
     CHECK(chain.latencyMs() > 0.5);
 }
+
+AL_TEST(OutputVolume_maps_to_a_perceptual_taper) {
+    using audiolens::outputVolumeToDb;
+
+    CHECK_NEAR(outputVolumeToDb(100), 0.0, 1e-9);   // unity, and never above it
+    CHECK_NEAR(outputVolumeToDb(50), -12.0, 0.1);   // halfway reads as "half as loud"
+    CHECK_NEAR(outputVolumeToDb(25), -24.1, 0.2);
+    CHECK(outputVolumeToDb(0) < -100.0);            // effectively silent
+
+    // Monotonic, and out-of-range values are clamped rather than extrapolated.
+    CHECK(outputVolumeToDb(80) < outputVolumeToDb(90));
+    CHECK_NEAR(outputVolumeToDb(150), 0.0, 1e-9);
+}
+
+AL_TEST(OutputVolume_attenuates_without_costing_the_passthrough_its_latency) {
+    // The master has to work on the preset that applies nothing, and it must not
+    // drag the limiter back in to do it: an attenuation cannot clip, so there is
+    // nothing for a limiter to catch. Losing the zero latency here would mean
+    // "no processing" quietly stopped being true the moment somebody turned the
+    // volume down.
+    const Preset* standard = findBuiltinPreset("standard");
+    CHECK(standard != nullptr);
+    if (standard == nullptr) return;
+
+    DspParameters parameters = resolveParameters(*standard, standard->sliders);
+    CHECK(parameters.passthrough);
+    parameters.outputGainDb += audiolens::outputVolumeToDb(50);
+
+    DspChain chain;
+    chain.setParameters(parameters);
+    chain.prepare(kRate, kChannels, 512);
+    CHECK_NEAR(chain.latencyMs(), 0.0, 1e-9);
+
+    std::vector<float> audio = makeSine(1000.0, 0.2, 0.5);
+    const double before = bandLevelDbfs(audio, kChannels, kRate, 1000.0, 2.0);
+    chain.process(audio.data(), audio.size() / kChannels, kChannels);
+    const double after = bandLevelDbfs(audio, kChannels, kRate, 1000.0, 2.0);
+
+    CHECK_NEAR(after - before, -12.0, 0.5);
+}

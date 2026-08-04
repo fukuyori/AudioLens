@@ -289,10 +289,24 @@ void DspChain::process(float* audio, std::size_t frames, std::uint32_t channels)
         const float inputPeak = blockPeak(block, count, channels);
         updateMeter(meterInputPeak_, inputPeak, meterDecayPerSubBlock_);
 
-        // Nothing to do, and nothing to delay it by. The meters still move, so
-        // the user can see audio arriving and leaving.
+        // Nothing to do but turn it down, and turning it down costs no delay.
+        // The master volume has to work here or "no processing" would mean "no
+        // volume control either"; letting it ride this path is what keeps the
+        // passthrough preset at zero latency while it does.
+        //
+        // Only attenuation reaches here. Anything that could raise the level
+        // needs the limiter behind it, and resolveParameters() refuses to call
+        // that a passthrough.
         if (current_.passthrough) {
-            updateMeter(meterOutputPeak_, inputPeak, meterDecayPerSubBlock_);
+            if (outputGainLinear_ != 1.0f) {
+                for (std::size_t i = 0; i < count * channels; ++i) {
+                    block[i] *= outputGainLinear_;
+                }
+                updateMeter(meterOutputPeak_, blockPeak(block, count, channels),
+                            meterDecayPerSubBlock_);
+            } else {
+                updateMeter(meterOutputPeak_, inputPeak, meterDecayPerSubBlock_);
+            }
             offset += count;
             continue;
         }

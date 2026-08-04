@@ -2,10 +2,24 @@
 
 #include "core/preset.h"
 
+#include <QMap>
 #include <QString>
 #include <QVector>
 
 namespace audiolens::app {
+
+/// What was in use on one particular output device (requirement F-13).
+///
+/// Keyed by the *render* device rather than the capture one: the capture side is
+/// the virtual cable and never changes, while the output is headphones one hour
+/// and speakers the next — and those want different corrections. Headphones
+/// need less bass control than a desk speaker sitting on a resonant surface,
+/// and the volume that suits one is painful on the other.
+struct DeviceProfile {
+    QString presetId;
+    SliderValues sliders;
+    int outputVolume = 100;
+};
 
 /// Everything the app remembers between runs, other than the presets.
 struct AppSettings {
@@ -19,6 +33,15 @@ struct AppSettings {
 
     QString activePresetId = QStringLiteral("standard");
     SliderValues sliders;
+
+    /// Master output level, 0-100, where 100 is unity gain (requirement F-22).
+    ///
+    /// Deliberately attenuation only. A master that could also boost would need
+    /// the limiter behind it to stay safe, and the limiter is exactly what the
+    /// passthrough preset exists to avoid; making things louder is what the
+    /// presets are for. This is the control for "that is too loud", which is
+    /// what a volume control means to everyone who has ever used one.
+    int outputVolume = 100;
 
     bool startWithWindows = false;
     bool startMinimized = false;
@@ -39,6 +62,11 @@ struct AppSettings {
     /// value at startup therefore means the last run was killed without giving
     /// the device back, and the routing has to be repaired (requirement N-04).
     QString previousDefaultDeviceId;
+
+    /// Remembered settings per output device, keyed by device id. A device with
+    /// no entry here is simply not being remembered, which is the default: the
+    /// feature only starts applying once the user asks it to for a given device.
+    QMap<QString, DeviceProfile> deviceProfiles;
 };
 
 /// Reads and writes `%APPDATA%\AudioLens`.

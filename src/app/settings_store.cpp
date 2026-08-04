@@ -10,6 +10,8 @@
 #include <QSaveFile>
 #include <QStandardPaths>
 
+#include <algorithm>
+
 namespace audiolens::app {
 namespace {
 
@@ -74,6 +76,8 @@ AppSettings SettingsStore::loadSettings() const {
     settings.renderDeviceId = json[QStringLiteral("renderDeviceId")].toString();
     settings.activePresetId =
         json[QStringLiteral("activePresetId")].toString(settings.activePresetId);
+    settings.outputVolume =
+        std::clamp(json[QStringLiteral("outputVolume")].toInt(settings.outputVolume), 0, 100);
     settings.startWithWindows =
         json[QStringLiteral("startWithWindows")].toBool(settings.startWithWindows);
     settings.startMinimized =
@@ -90,6 +94,26 @@ AppSettings SettingsStore::loadSettings() const {
     settings.sliders.leveling = sliders[QStringLiteral("leveling")].toInt(settings.sliders.leveling);
     settings.sliders = settings.sliders.clamped();
 
+    const QJsonObject profiles = json[QStringLiteral("deviceProfiles")].toObject();
+    for (auto it = profiles.begin(); it != profiles.end(); ++it) {
+        const QJsonObject entry = it.value().toObject();
+        DeviceProfile profile;
+        profile.presetId = entry[QStringLiteral("presetId")].toString();
+        // An entry naming no preset would silently do nothing on being applied,
+        // which is worse than not being there at all.
+        if (profile.presetId.isEmpty()) {
+            continue;
+        }
+        const QJsonObject profileSliders = entry[QStringLiteral("sliders")].toObject();
+        profile.sliders.bass = profileSliders[QStringLiteral("bass")].toInt(50);
+        profile.sliders.clarity = profileSliders[QStringLiteral("clarity")].toInt(50);
+        profile.sliders.leveling = profileSliders[QStringLiteral("leveling")].toInt(50);
+        profile.sliders = profile.sliders.clamped();
+        profile.outputVolume =
+            std::clamp(entry[QStringLiteral("outputVolume")].toInt(100), 0, 100);
+        settings.deviceProfiles.insert(it.key(), profile);
+    }
+
     return settings;
 }
 
@@ -105,11 +129,27 @@ bool SettingsStore::saveSettings(const AppSettings& settings, QString* error) co
     json[QStringLiteral("renderDeviceId")] = settings.renderDeviceId;
     json[QStringLiteral("activePresetId")] = settings.activePresetId;
     json[QStringLiteral("sliders")] = sliders;
+    json[QStringLiteral("outputVolume")] = settings.outputVolume;
     json[QStringLiteral("startWithWindows")] = settings.startWithWindows;
     json[QStringLiteral("startMinimized")] = settings.startMinimized;
     json[QStringLiteral("takeOverDefaultDevice")] = settings.takeOverDefaultDevice;
     json[QStringLiteral("processingEnabled")] = settings.processingEnabled;
     json[QStringLiteral("previousDefaultDeviceId")] = settings.previousDefaultDeviceId;
+
+    QJsonObject profiles;
+    for (auto it = settings.deviceProfiles.begin(); it != settings.deviceProfiles.end(); ++it) {
+        QJsonObject profileSliders;
+        profileSliders[QStringLiteral("bass")] = it.value().sliders.bass;
+        profileSliders[QStringLiteral("clarity")] = it.value().sliders.clarity;
+        profileSliders[QStringLiteral("leveling")] = it.value().sliders.leveling;
+
+        QJsonObject entry;
+        entry[QStringLiteral("presetId")] = it.value().presetId;
+        entry[QStringLiteral("sliders")] = profileSliders;
+        entry[QStringLiteral("outputVolume")] = it.value().outputVolume;
+        profiles[it.key()] = entry;
+    }
+    json[QStringLiteral("deviceProfiles")] = profiles;
 
     return writeJsonObject(settingsPath(), json, error);
 }

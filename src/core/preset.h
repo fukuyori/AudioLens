@@ -117,6 +117,13 @@ struct Preset {
 /// runs on.
 dsp::DspParameters resolveParameters(const Preset& preset, const SliderValues& sliders);
 
+/// Master output level as a gain in dB (requirement F-22).
+///
+/// 100 is unity and 0 is silence, with a taper that puts the halfway point
+/// around -12 dB — roughly where a listener would call it "half as loud", which
+/// a linear scale badly fails to do.
+double outputVolumeToDb(int volume);
+
 /// Same, using the preset's own slider positions.
 dsp::DspParameters resolveParameters(const Preset& preset);
 

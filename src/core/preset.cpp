@@ -485,12 +485,15 @@ dsp::DspParameters resolveParameters(const Preset& preset, const SliderValues& r
     // redesigning. Below it nothing is audible and the arithmetic is an
     // identity anyway: a peaking or shelving section at 0 dB has numerator and
     // denominator coefficients that are equal term for term.
+    // The output gain is excluded on purpose when it only ever turns things
+    // down. An attenuation cannot clip, so it needs no limiter behind it, and
+    // the chain applies it on the passthrough path without adding any delay.
+    // A *positive* gain would need the limiter and so counts as processing.
     constexpr double kAudible = 0.01;
     bool anyProcessing = p.highpassEnabled || p.compressorEnabled || p.autoGain.enabled ||
                          p.deEsser.enabled || std::abs(p.lowShelfGainDb) > kAudible ||
                          std::abs(p.highShelfGainDb) > kAudible ||
-                         std::abs(p.inputGainDb) > kAudible ||
-                         std::abs(p.outputGainDb) > kAudible ||
+                         std::abs(p.inputGainDb) > kAudible || p.outputGainDb > kAudible ||
                          (p.midSideEnabled && std::abs(p.sideGainDb) > kAudible);
     for (int i = 0; i < p.speechBandCount && !anyProcessing; ++i) {
         anyProcessing = std::abs(p.speechBands[i].gainDb) > kAudible;
@@ -498,6 +501,19 @@ dsp::DspParameters resolveParameters(const Preset& preset, const SliderValues& r
     p.passthrough = !anyProcessing;
 
     return p;
+}
+
+double outputVolumeToDb(int volume) {
+    const int clamped = std::clamp(volume, 0, 100);
+    if (clamped >= 100) return 0.0;
+    if (clamped <= 0) return -120.0;  // far below audibility; effectively mute
+
+    // A quartic taper on amplitude. Loudness roughly follows the fourth root of
+    // power, so this keeps the perceived change even across the travel instead
+    // of crowding everything into the top of the slider the way a linear gain
+    // does.
+    const double fraction = clamped / 100.0;
+    return 20.0 * std::log10(fraction * fraction);
 }
 
 dsp::DspParameters resolveParameters(const Preset& preset) {

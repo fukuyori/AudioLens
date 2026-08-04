@@ -1,4 +1,4 @@
-# AudioLens 0.1.4
+# AudioLens 0.1.5
 
 PC で再生される音声を、用途に合わせて聞き取りやすく調整するプリセット型オーディオ補助アプリ(Windows)。
 
@@ -74,7 +74,7 @@ $bin = ".\build\release\bin"
 & $bin\audiolens_process.exe --input in.wav --output out.wav --preset movie --no-autogain
 & $bin\audiolens_process.exe --input in.wav --output out.wav --preset movie --no-deesser
 
-# 単体テスト(ハードウェア不要、102 件)
+# 単体テスト(ハードウェア不要、104 件)
 & $bin\audiolens_tests.exe
 
 # プロセスループバック検証(案 E の判定に使った。結論は不成立)

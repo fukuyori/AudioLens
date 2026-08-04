@@ -102,6 +102,7 @@ MainWindow::MainWindow() {
     refreshDeviceLists();
     startWithWindowsCheck_->setChecked(settings_.startWithWindows);
     takeOverCheck_->setChecked(settings_.takeOverDefaultDevice);
+    volumeSlider_->setValue(settings_.outputVolume);
     selectPresetById(settings_.activePresetId);
 
     // On a first run there are no stored slider positions, so the preset's own
@@ -115,6 +116,7 @@ MainWindow::MainWindow() {
     loading_ = false;
 
     updateSliderLabels();
+    onOutputVolumeChanged();
     applyCurrentSettings();
     onDeviceChanged();
     updateStatusLabel(controller_.status());
@@ -216,6 +218,31 @@ QWidget* MainWindow::buildSliderSection() {
         row += 2;
     }
 
+    // Volume sits with the other sliders rather than in a box of its own. It is
+    // not an "amount of effect", but it is the same gesture reached for in the
+    // same place, and a group of its own cost enough height to squeeze the rest
+    // of the window.
+    grid->addWidget(makeSeparator(), row, 0, 1, 3);
+    ++row;
+
+    auto* volumeName = new QLabel(QStringLiteral("出力音量"));
+    volumeSlider_ = new QSlider(Qt::Horizontal);
+    volumeSlider_->setRange(0, 100);
+    volumeSlider_->setSingleStep(1);
+    volumeSlider_->setPageStep(5);
+    connect(volumeSlider_, &QSlider::valueChanged, this, &MainWindow::onOutputVolumeChanged);
+
+    volumeValue_ = new QLabel(QStringLiteral("100"));
+    volumeValue_->setMinimumWidth(32);
+    volumeValue_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+    // No hint under this one. The three above need explaining because "低音"
+    // and "音量差" describe an amount of processing rather than a thing; a
+    // volume slider explains itself.
+    grid->addWidget(volumeName, row, 0);
+    grid->addWidget(volumeSlider_, row, 1);
+    grid->addWidget(volumeValue_, row, 2);
+
     return group;
 }
 
@@ -263,6 +290,15 @@ QWidget* MainWindow::buildDeviceSection() {
     layout->addWidget(makeHint(QStringLiteral(
         "Windows の既定の出力デバイスを「取り込み元」に指定し、実際に聞くデバイスを"
         "「出力先」に指定します。両方を同じにすると音が回り込むため設定できません。")));
+
+    rememberDeviceCheck_ = new QCheckBox(
+        QStringLiteral("この出力先の設定として覚える"));
+    rememberDeviceCheck_->setToolTip(QStringLiteral(
+        "いまのプリセット・効果の強さ・出力音量を、この出力先に結び付けて覚えます。\n"
+        "次にこの出力先へ切り替えたとき、自動で戻ります。"));
+    connect(rememberDeviceCheck_, &QCheckBox::toggled, this,
+            &MainWindow::onRememberDeviceToggled);
+    layout->addWidget(rememberDeviceCheck_);
 
     takeOverCheck_ = new QCheckBox(
         QStringLiteral("動作中は「取り込み元」を Windows の既定の出力にする"));
@@ -532,6 +568,77 @@ void MainWindow::onSliderChanged() {
     persistSettings();
 }
 
+void MainWindow::onRememberDeviceToggled(bool enabled) {
+    if (loading_) {
+        return;
+    }
+    const QString renderId = renderCombo_->currentData().toString();
+    if (renderId.isEmpty()) {
+        return;
+    }
+    if (enabled) {
+        storeDeviceProfile();
+    } else {
+        settings_.deviceProfiles.remove(renderId);
+    }
+    persistSettings();
+}
+
+void MainWindow::storeDeviceProfile() {
+    if (rememberDeviceCheck_ == nullptr || !rememberDeviceCheck_->isChecked()) {
+        return;
+    }
+    const QString renderId = renderCombo_->currentData().toString();
+    if (renderId.isEmpty()) {
+        return;
+    }
+    DeviceProfile profile;
+    if (const Preset* preset = currentPreset()) {
+        profile.presetId = qs(preset->id);
+    }
+    if (profile.presetId.isEmpty()) {
+        return;
+    }
+    profile.sliders = currentSliders();
+    profile.outputVolume = volumeSlider_->value();
+    settings_.deviceProfiles.insert(renderId, profile);
+}
+
+void MainWindow::applyDeviceProfile(const QString& renderDeviceId) {
+    const auto it = settings_.deviceProfiles.constFind(renderDeviceId);
+
+    // The checkbox reflects whether this device is remembered, so it has to be
+    // updated whether or not there was anything to apply.
+    const bool wasLoading = loading_;
+    loading_ = true;
+    rememberDeviceCheck_->setChecked(it != settings_.deviceProfiles.constEnd());
+
+    if (it != settings_.deviceProfiles.constEnd()) {
+        selectPresetById(it->presetId);
+        bassSlider_->setValue(it->sliders.bass);
+        claritySlider_->setValue(it->sliders.clarity);
+        levelingSlider_->setValue(it->sliders.leveling);
+        volumeSlider_->setValue(it->outputVolume);
+    }
+    loading_ = wasLoading;
+
+    if (it != settings_.deviceProfiles.constEnd()) {
+        updateSliderLabels();
+        volumeValue_->setText(QString::number(volumeSlider_->value()));
+        applyCurrentSettings();
+    }
+}
+
+void MainWindow::onOutputVolumeChanged() {
+    volumeValue_->setText(QString::number(volumeSlider_->value()));
+    if (loading_) {
+        return;
+    }
+    settings_.outputVolume = volumeSlider_->value();
+    applyCurrentSettings();
+    persistSettings();
+}
+
 void MainWindow::onDeviceChanged() {
     if (loading_) {
         return;
@@ -545,8 +652,16 @@ void MainWindow::onDeviceChanged() {
         releaseDefaultDevice();
     }
 
-    controller_.setDevices(captureCombo_->currentData().toString(),
-                           renderCombo_->currentData().toString());
+    const QString renderId = renderCombo_->currentData().toString();
+    // Only on an actual change of output device. Every settings change also
+    // lands here, and re-applying the profile then would undo the adjustment
+    // the user had just made.
+    if (renderId != appliedProfileDeviceId_) {
+        appliedProfileDeviceId_ = renderId;
+        applyDeviceProfile(renderId);
+    }
+
+    controller_.setDevices(captureCombo_->currentData().toString(), renderId);
 
     if (wasHeld && controller_.running()) {
         acquireDefaultDevice();
@@ -740,7 +855,7 @@ void MainWindow::repairStrandedDefaultDevice() {
 void MainWindow::applyCurrentSettings() {
     const Preset* preset = currentPreset();
     if (preset != nullptr) {
-        controller_.applyPreset(*preset, currentSliders());
+        controller_.applyPreset(*preset, currentSliders(), settings_.outputVolume);
     }
 }
 
@@ -819,6 +934,11 @@ void MainWindow::persistSettings() {
     settings_.captureDeviceId = captureCombo_->currentData().toString();
     settings_.renderDeviceId = renderCombo_->currentData().toString();
     settings_.sliders = currentSliders();
+    settings_.outputVolume = volumeSlider_->value();
+    // A remembered device follows whatever the user does next, so the profile is
+    // refreshed alongside the ordinary settings rather than only when the
+    // checkbox is ticked.
+    storeDeviceProfile();
     if (const Preset* preset = currentPreset()) {
         settings_.activePresetId = qs(preset->id);
     }
