@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app/i18n.h"
 #include "core/preset.h"
 
 #include <QMap>
@@ -51,6 +52,10 @@ struct AppSettings {
     /// (requirement F-24). Attenuation only, for the same reason as above: the
     /// far channel is turned down, never the near one up.
     int balance = 0;
+
+    /// Interface language. `System` follows Windows, which is what almost
+    /// everyone wants and what a first run gets.
+    Language language = Language::System;
 
     bool startWithWindows = false;
     bool startMinimized = false;

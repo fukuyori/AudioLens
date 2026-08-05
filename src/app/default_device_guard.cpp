@@ -3,6 +3,8 @@
 #include "common/com.h"
 #include "engine/default_device.h"
 
+#include <QCoreApplication>
+
 #include <windows.h>
 
 #include <atomic>
@@ -66,7 +68,10 @@ QString DefaultDeviceGuard::currentDefault() {
 bool DefaultDeviceGuard::acquire(const QString& deviceId, const QString& restoreDeviceId,
                                  const QString& fallbackDeviceId, QString* error) {
     if (deviceId.isEmpty()) {
-        if (error != nullptr) *error = QStringLiteral("取り込み元のデバイスが指定されていません。");
+        if (error != nullptr) {
+            *error = QCoreApplication::translate("DefaultDeviceGuard",
+                                                 "No capture device has been selected.");
+        }
         return false;
     }
     // No early exit when the cable is already the default. It used to return

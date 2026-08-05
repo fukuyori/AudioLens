@@ -64,6 +64,7 @@ private:
     void onStartWithWindowsToggled(bool enabled);
     void onTakeOverToggled(bool enabled);
     void onRememberDeviceToggled(bool enabled);
+    void onLanguageChanged();
 
     // --- device-linked presets (requirement F-13) ---
     /// Applies whatever was remembered for `renderDeviceId`, if anything.
@@ -139,6 +140,7 @@ private:
 
     QComboBox* captureCombo_ = nullptr;
     QComboBox* renderCombo_ = nullptr;
+    QComboBox* languageCombo_ = nullptr;
     QCheckBox* startWithWindowsCheck_ = nullptr;
     QCheckBox* takeOverCheck_ = nullptr;
     QCheckBox* rememberDeviceCheck_ = nullptr;

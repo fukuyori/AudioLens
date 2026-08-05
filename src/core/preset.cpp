@@ -1,4 +1,4 @@
-#include "core/preset.h"
+﻿#include "core/preset.h"
 
 #include <algorithm>
 #include <cmath>
@@ -14,8 +14,8 @@ double lerp(double at0, double at100, double t) { return at0 + (at100 - at0) * t
 Preset makeConversation() {
     Preset p;
     p.id = "conversation";
-    p.name = "会話";
-    p.description = "通話や会議の声を前に出し、音量差を強く揃えます。";
+    p.name = "Conversation";
+    p.description = "Brings voices in calls and meetings forward and evens out loudness firmly.";
     p.sliders = {60, 75, 80};
 
     PresetMapping& m = p.mapping;
@@ -52,8 +52,8 @@ Preset makeConversation() {
 Preset makeLecture() {
     Preset p;
     p.id = "lecture";
-    p.name = "講義";
-    p.description = "長時間聞いても疲れにくいよう、明瞭さは中程度、高域の刺激を抑えます。";
+    p.name = "Lecture";
+    p.description = "Moderate clarity with the harsh top held back, so long listening stays comfortable.";
     p.sliders = {50, 55, 55};
 
     PresetMapping& m = p.mapping;
@@ -89,8 +89,8 @@ Preset makeLecture() {
 Preset makeMovie() {
     Preset p;
     p.id = "movie";
-    p.name = "映画";
-    p.description = "セリフと効果音の音量差を縮めます。低音の迫力は残します。";
+    p.name = "Film";
+    p.description = "Narrows the gap between dialogue and effects while keeping the weight of the bass.";
     p.sliders = {35, 55, 80};
 
     PresetMapping& m = p.mapping;
@@ -134,8 +134,8 @@ Preset makeMovie() {
 Preset makeNight() {
     Preset p;
     p.id = "night";
-    p.name = "深夜";
-    p.description = "小さな音量でも聞こえるよう最大限に揃え、低音を強く抑えます。";
+    p.name = "Late night";
+    p.description = "Levels as far as it goes so quiet playback stays audible, and cuts the bass hard.";
     p.sliders = {85, 65, 100};
 
     PresetMapping& m = p.mapping;
@@ -168,8 +168,8 @@ Preset makeNight() {
 Preset makeGame() {
     Preset p;
     p.id = "game";
-    p.name = "ゲーム";
-    p.description = "低域を削って中高域を立て、小さな音と方向を分かりやすくします。";
+    p.name = "Game";
+    p.description = "Cuts the lows and lifts the upper mids, making quiet sounds and their direction clear.";
     p.sliders = {80, 85, 55};
 
     PresetMapping& m = p.mapping;
@@ -243,8 +243,8 @@ Preset makeStandard() {
     Preset p;
     p.id = "standard";
     p.category = PresetCategory::Passthrough;
-    p.name = "標準";
-    p.description = "補正なし。音はそのまま通り、遅延も処理も一切ありません。";
+    p.name = "Standard";
+    p.description = "No correction. The sound passes through untouched, with no processing and no latency.";
     // Every amount at zero. "標準" is the setting you leave selected when you
     // want AudioLens out of the way: the chain detects that nothing is being
     // applied and hands the audio straight back, adding no latency at all.
@@ -300,8 +300,8 @@ Preset makeRock() {
     Preset p;
     p.id = "rock";
     p.category = PresetCategory::Music;
-    p.name = "ロック";
-    p.description = "歪んだギターに埋もれがちなボーカルを前に出し、低音の飽和を整理します。";
+    p.name = "Rock";
+    p.description = "Lifts vocals out of distorted guitars and tidies up a saturated low end.";
     p.sliders = {30, 40, 0};
 
     PresetMapping& m = p.mapping;
@@ -335,8 +335,8 @@ Preset makeJazz() {
     Preset p;
     p.id = "jazz";
     p.category = PresetCategory::Music;
-    p.name = "ジャズ";
-    p.description = "小編成の各楽器の輪郭を保ったまま、角張った高域だけを丸めます。";
+    p.name = "Jazz";
+    p.description = "Keeps every instrument of a small group distinct and rounds off only the edgy top.";
     p.sliders = {20, 30, 0};
 
     PresetMapping& m = p.mapping;
@@ -366,8 +366,8 @@ Preset makeClassical() {
     Preset p;
     p.id = "classical";
     p.category = PresetCategory::Music;
-    p.name = "クラシック";
-    p.description = "ダイナミクスとホールの響きを最大限残し、必要最小限だけ触ります。";
+    p.name = "Classical";
+    p.description = "Preserves the dynamics and the hall, and touches as little as possible.";
     p.sliders = {15, 20, 0};
 
     PresetMapping& m = p.mapping;
@@ -398,8 +398,8 @@ Preset makeAmbient() {
     Preset p;
     p.id = "ambient";
     p.category = PresetCategory::Music;
-    p.name = "アンビエント";
-    p.description = "高域の細部を少し起こし、広がりと音量の起伏はそのまま保ちます。";
+    p.name = "Ambient";
+    p.description = "Raises fine detail at the top a little and leaves the width and the swells alone.";
     p.sliders = {20, 15, 0};
 
     PresetMapping& m = p.mapping;

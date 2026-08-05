@@ -1,5 +1,6 @@
 #include "app/preset_json.h"
 
+#include <QCoreApplication>
 #include <QJsonArray>
 
 namespace audiolens::app {
@@ -90,17 +91,19 @@ bool presetFromJson(const QJsonObject& json, Preset* out, QString* error) {
 
     const int version = json[QStringLiteral("schemaVersion")].toInt(0);
     if (version <= 0) {
-        return fail(QStringLiteral("schemaVersion がありません。"));
+        return fail(QCoreApplication::translate("PresetJson", "schemaVersion is missing."));
     }
     if (version > kPresetSchemaVersion) {
-        return fail(QStringLiteral("このプリセットは新しい形式 (v%1) です。AudioLens を更新してください。")
+        return fail(QCoreApplication::translate(
+                        "PresetJson",
+                        "This preset is in a newer format (v%1). Update AudioLens.")
                         .arg(version));
     }
 
     const QString id = json[QStringLiteral("id")].toString();
     const QString name = json[QStringLiteral("name")].toString();
     if (id.isEmpty() || name.isEmpty()) {
-        return fail(QStringLiteral("id または name が空です。"));
+        return fail(QCoreApplication::translate("PresetJson", "id or name is empty."));
     }
 
     // Anything absent falls back to the default, so a hand-edited file that
@@ -134,7 +137,7 @@ bool presetFromJson(const QJsonObject& json, Preset* out, QString* error) {
         m.speechBandsAt100.push_back(speechBandFromJson(value.toObject()));
     }
     if (m.speechBandsAt100.empty()) {
-        return fail(QStringLiteral("speechBandsAt100 が空です。"));
+        return fail(QCoreApplication::translate("PresetJson", "speechBandsAt100 is empty."));
     }
     m.highShelfFreqHz = clarity[QStringLiteral("highShelfFreqHz")].toDouble(m.highShelfFreqHz);
     m.highShelfGainAt0Db =

@@ -1,4 +1,4 @@
-# AudioLens 0.2.0
+# AudioLens 0.2.1
 
 *[日本語](README.ja.md)*
 
@@ -16,6 +16,11 @@ speech needs, and evens out differences in loudness. No specialist knowledge is
 required: three amounts (Bass, Speech clarity, Loudness range) control the
 strength of the effect, and the output volume and left/right balance sit in the
 same place.
+
+The interface is **English and Japanese**. It follows the Windows language by
+default and can be set explicitly under Signal path; the change takes effect on
+the next start. The Japanese catalogue is compiled into the executable, so there
+is no separate file for an installer to omit or a user to delete.
 
 ## Status
 

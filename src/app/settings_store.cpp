@@ -2,6 +2,7 @@
 
 #include "app/preset_json.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
@@ -30,14 +31,16 @@ bool writeJsonObject(const QString& path, const QJsonObject& json, QString* erro
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
         if (error != nullptr) {
-            *error = QStringLiteral("%1 を書き込めません: %2").arg(path, file.errorString());
+            *error = QCoreApplication::translate("SettingsStore", "Cannot write %1: %2")
+                         .arg(path, file.errorString());
         }
         return false;
     }
     file.write(QJsonDocument(json).toJson(QJsonDocument::Indented));
     if (!file.commit()) {
         if (error != nullptr) {
-            *error = QStringLiteral("%1 を保存できません: %2").arg(path, file.errorString());
+            *error = QCoreApplication::translate("SettingsStore", "Cannot save %1: %2")
+                         .arg(path, file.errorString());
         }
         return false;
     }
@@ -80,6 +83,7 @@ AppSettings SettingsStore::loadSettings() const {
         std::clamp(json[QStringLiteral("outputVolume")].toInt(settings.outputVolume), 0, 100);
     settings.balance =
         std::clamp(json[QStringLiteral("balance")].toInt(settings.balance), -50, 50);
+    settings.language = languageFromString(json[QStringLiteral("language")].toString());
     settings.startWithWindows =
         json[QStringLiteral("startWithWindows")].toBool(settings.startWithWindows);
     settings.startMinimized =
@@ -134,6 +138,7 @@ bool SettingsStore::saveSettings(const AppSettings& settings, QString* error) co
     json[QStringLiteral("sliders")] = sliders;
     json[QStringLiteral("outputVolume")] = settings.outputVolume;
     json[QStringLiteral("balance")] = settings.balance;
+    json[QStringLiteral("language")] = languageToString(settings.language);
     json[QStringLiteral("startWithWindows")] = settings.startWithWindows;
     json[QStringLiteral("startMinimized")] = settings.startMinimized;
     json[QStringLiteral("takeOverDefaultDevice")] = settings.takeOverDefaultDevice;
@@ -194,7 +199,8 @@ bool SettingsStore::deleteUserPreset(const QString& id, QString* error) const {
     }
     if (!file.remove()) {
         if (error != nullptr) {
-            *error = QStringLiteral("%1 を削除できません: %2").arg(path, file.errorString());
+            *error = QCoreApplication::translate("SettingsStore", "Cannot delete %1: %2")
+                         .arg(path, file.errorString());
         }
         return false;
     }

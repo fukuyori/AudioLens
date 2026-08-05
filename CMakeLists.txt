@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(AudioLens
-    VERSION 0.2.0
+    VERSION 0.2.1
     DESCRIPTION "Preset-based audio assistance for Windows playback"
     LANGUAGES CXX)
 
@@ -66,7 +66,11 @@ add_subdirectory(src/tools/procloop)
 # working build rather than a configure error.
 option(AUDIOLENS_BUILD_GUI "Build the Qt GUI application" ON)
 if(AUDIOLENS_BUILD_GUI)
-    find_package(Qt6 6.5 COMPONENTS Widgets QUIET)
+    # LinguistTools carries lupdate and lrelease, which turn the .ts catalogue
+    # into the .qm that gets compiled into the binary. Without it in this list
+    # the Qt6::lupdate target does not exist, qt_add_translations is skipped,
+    # and the app builds and runs in English only - which is what happened.
+    find_package(Qt6 6.5 COMPONENTS Widgets LinguistTools QUIET)
     if(Qt6_FOUND)
         qt_standard_project_setup()
         add_subdirectory(src/app)

@@ -1,6 +1,7 @@
 #include "app/main_window.h"
 
 #include "app/default_device_guard.h"
+#include "app/i18n.h"
 #include "app/level_meter.h"
 #include "common/log.h"
 #include "engine/default_device.h"
@@ -61,12 +62,13 @@ QFrame* makeSeparator() {
 
 /// The balance slider's readout: L30 / 0 / R30.
 ///
-/// A bare signed number would make the user work out which end is which. "左"
-/// and "右" say it outright, but a full-width character is nearly twice the
-/// width of a Latin one, and this readout shares a grid column with the plain
-/// numbers above it — so the widest thing it can ever show sets how much room
-/// every slider in the group has left. L and R are what the labelling on every
-/// piece of audio hardware uses, in a third of the space.
+/// A bare signed number would make the user work out which end is which. Words
+/// say it outright, but in Japanese those are full-width characters, nearly
+/// twice the width of a Latin one, and this readout shares a grid column with
+/// the plain numbers above it — so the widest thing it can ever show sets how
+/// much room every slider in the group has left. L and R are what the labelling
+/// on every piece of audio hardware uses, in a third of the space, and they
+/// need no translation.
 QString balanceText(int balance) {
     if (balance == 0) {
         return QStringLiteral("0");
@@ -145,6 +147,8 @@ MainWindow::MainWindow() {
     refreshDeviceLists();
     startWithWindowsCheck_->setChecked(settings_.startWithWindows);
     takeOverCheck_->setChecked(settings_.takeOverDefaultDevice);
+    languageCombo_->setCurrentIndex(
+        std::max(0, languageCombo_->findData(languageToString(settings_.language))));
     volumeSlider_->setValue(settings_.outputVolume);
     balanceSlider_->setValue(settings_.balance);
     selectPresetById(settings_.activePresetId);
@@ -188,7 +192,7 @@ MainWindow::~MainWindow() {
 // ---------------------------------------------------------------- layout ---
 
 QWidget* MainWindow::buildPresetSection() {
-    auto* group = new QGroupBox(QStringLiteral("プリセット"));
+    auto* group = new QGroupBox(tr("Presets"));
     auto* layout = new QVBoxLayout(group);
 
     presetList_ = new QListWidget;
@@ -217,9 +221,9 @@ QWidget* MainWindow::buildPresetSection() {
     layout->addWidget(presetDescription_);
 
     auto* buttons = new QHBoxLayout;
-    savePresetButton_ = new QPushButton(QStringLiteral("いまの設定を保存..."));
+    savePresetButton_ = new QPushButton(tr("Save these settings..."));
     connect(savePresetButton_, &QPushButton::clicked, this, &MainWindow::onSaveUserPreset);
-    deletePresetButton_ = new QPushButton(QStringLiteral("削除"));
+    deletePresetButton_ = new QPushButton(tr("Delete"));
     connect(deletePresetButton_, &QPushButton::clicked, this, &MainWindow::onDeleteUserPreset);
     buttons->addWidget(savePresetButton_);
     buttons->addWidget(deletePresetButton_);
@@ -230,7 +234,7 @@ QWidget* MainWindow::buildPresetSection() {
 }
 
 QWidget* MainWindow::buildSliderSection() {
-    auto* group = new QGroupBox(QStringLiteral("効果の強さ"));
+    auto* group = new QGroupBox(tr("Amount of effect"));
     auto* grid = new QGridLayout(group);
     grid->setColumnStretch(1, 1);
 
@@ -238,27 +242,32 @@ QWidget* MainWindow::buildSliderSection() {
     // greyed sentences repeated on every screenshot are read once and then
     // become noise that the eye has to step over on the way to the control.
     // The tooltips keep the wording for anyone who wants it.
+    //
+    // The strings are built here rather than held in the table below: tr()
+    // called on a table entry would translate at the point of use, which is
+    // correct, but lupdate reads source text and would find nothing to extract.
     struct Row {
-        const char* label;
-        const char* tip;
+        QString label;
+        QString tip;
         QSlider** slider;
         QLabel** value;
     };
     const Row rows[] = {
-        {"低音", "こもりや響きすぎを抑えます", &bassSlider_, &bassValue_},
-        {"声の明瞭さ", "人の声を聞き取りやすくします", &claritySlider_, &clarityValue_},
-        {"音量差", "大きい音と小さい音の差を揃えます", &levelingSlider_, &levelingValue_},
+        {tr("Bass"), tr("Reduces boom and excessive resonance"), &bassSlider_, &bassValue_},
+        {tr("Speech clarity"), tr("Makes voices easier to follow"), &claritySlider_, &clarityValue_},
+        {tr("Loudness range"), tr("Evens out the gap between loud and quiet"), &levelingSlider_,
+         &levelingValue_},
     };
 
     int row = 0;
     for (const Row& r : rows) {
-        auto* name = new QLabel(QString::fromUtf8(r.label));
-        name->setToolTip(QString::fromUtf8(r.tip));
+        auto* name = new QLabel(r.label);
+        name->setToolTip(r.tip);
         *r.slider = new QSlider(Qt::Horizontal);
         (*r.slider)->setRange(0, 100);
         (*r.slider)->setSingleStep(1);
         (*r.slider)->setPageStep(10);
-        (*r.slider)->setToolTip(QString::fromUtf8(r.tip));
+        (*r.slider)->setToolTip(r.tip);
         connect(*r.slider, &QSlider::valueChanged, this, &MainWindow::onSliderChanged);
 
         *r.value = new QLabel(QStringLiteral("0"));
@@ -278,7 +287,7 @@ QWidget* MainWindow::buildSliderSection() {
     grid->addWidget(makeSeparator(), row, 0, 1, 3);
     ++row;
 
-    auto* volumeName = new QLabel(QStringLiteral("出力音量"));
+    auto* volumeName = new QLabel(tr("Output volume"));
     volumeSlider_ = new QSlider(Qt::Horizontal);
     volumeSlider_->setRange(0, 100);
     volumeSlider_->setSingleStep(1);
@@ -289,22 +298,22 @@ QWidget* MainWindow::buildSliderSection() {
     volumeValue_->setMinimumWidth(32);
     volumeValue_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
-    // No hint under this one. The three above need explaining because "低音"
-    // and "音量差" describe an amount of processing rather than a thing; a
+    // No hint under this one. The three above need explaining because "bass"
+    // and "loudness range" name an amount of processing rather than a thing; a
     // volume slider explains itself.
     grid->addWidget(volumeName, row, 0);
     grid->addWidget(volumeSlider_, row, 1);
     grid->addWidget(volumeValue_, row, 2);
     ++row;
 
-    auto* balanceName = new QLabel(QStringLiteral("左右"));
+    auto* balanceName = new QLabel(tr("Balance"));
     balanceSlider_ = new QSlider(Qt::Horizontal);
     balanceSlider_->setRange(-50, 50);
     balanceSlider_->setSingleStep(1);
     balanceSlider_->setPageStep(5);
-    balanceSlider_->setToolTip(QStringLiteral(
-        "左右の聞こえ方が違うときに、大きく聞こえる側を下げて釣り合わせます。\n"
-        "ダブルクリックで中央に戻ります。"));
+    balanceSlider_->setToolTip(
+        tr("When one ear hears more than the other, turns the louder side down\n"
+           "to even them up. Double-click to return to centre."));
     balanceSlider_->installEventFilter(this);
     connect(balanceSlider_, &QSlider::valueChanged, this, &MainWindow::onBalanceChanged);
 
@@ -337,7 +346,7 @@ QWidget* MainWindow::buildSliderSection() {
     balanceValue_->setMinimumWidth(32);
     balanceValue_->setCursor(Qt::PointingHandCursor);
     balanceValue_->setFocusPolicy(Qt::NoFocus);
-    balanceValue_->setToolTip(QStringLiteral("L = 左、R = 右。クリックで中央(0)に戻します"));
+    balanceValue_->setToolTip(tr("L = left, R = right. Click to return to centre (0)"));
     connect(balanceValue_, &QPushButton::clicked, this,
             [this] { balanceSlider_->setValue(0); });
 
@@ -349,7 +358,7 @@ QWidget* MainWindow::buildSliderSection() {
 }
 
 QWidget* MainWindow::buildMeterSection() {
-    auto* group = new QGroupBox(QStringLiteral("ボリューム"));
+    auto* group = new QGroupBox(tr("Levels"));
     auto* grid = new QGridLayout(group);
     grid->setColumnStretch(1, 1);
 
@@ -360,11 +369,11 @@ QWidget* MainWindow::buildMeterSection() {
     reductionValue_->setMinimumWidth(56);
     reductionValue_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
-    grid->addWidget(new QLabel(QStringLiteral("入力")), 0, 0);
+    grid->addWidget(new QLabel(tr("Input")), 0, 0);
     grid->addWidget(inputMeter_, 0, 1, 1, 2);
-    grid->addWidget(new QLabel(QStringLiteral("出力")), 1, 0);
+    grid->addWidget(new QLabel(tr("Output")), 1, 0);
     grid->addWidget(outputMeter_, 1, 1, 1, 2);
-    grid->addWidget(new QLabel(QStringLiteral("音量調整")), 2, 0);
+    grid->addWidget(new QLabel(tr("Levelling")), 2, 0);
     grid->addWidget(reductionMeter_, 2, 1);
     grid->addWidget(reductionValue_, 2, 2);
 
@@ -372,7 +381,7 @@ QWidget* MainWindow::buildMeterSection() {
 }
 
 QWidget* MainWindow::buildDeviceSection() {
-    auto* group = new QGroupBox(QStringLiteral("音の経路"));
+    auto* group = new QGroupBox(tr("Signal path"));
     auto* layout = new QVBoxLayout(group);
 
     auto* grid = new QGridLayout;
@@ -383,41 +392,58 @@ QWidget* MainWindow::buildDeviceSection() {
     connect(captureCombo_, &QComboBox::currentIndexChanged, this, &MainWindow::onDeviceChanged);
     connect(renderCombo_, &QComboBox::currentIndexChanged, this, &MainWindow::onDeviceChanged);
 
-    grid->addWidget(new QLabel(QStringLiteral("取り込み元")), 0, 0);
+    grid->addWidget(new QLabel(tr("Capture from")), 0, 0);
     grid->addWidget(captureCombo_, 0, 1);
-    grid->addWidget(new QLabel(QStringLiteral("出力先")), 1, 0);
+    grid->addWidget(new QLabel(tr("Play to")), 1, 0);
     grid->addWidget(renderCombo_, 1, 1);
     // The same paragraph that used to sit here in grey, moved to where it is
     // asked for rather than always on screen.
-    const QString routingTip = QStringLiteral(
-        "Windows の既定の出力デバイスを「取り込み元」に指定し、実際に聞くデバイスを\n"
-        "「出力先」に指定します。両方を同じにすると音が回り込むため設定できません。");
+    const QString routingTip =
+        tr("Set Windows' default output device as the capture source, and the\n"
+           "device you actually listen on as the output. The two cannot be the\n"
+           "same, because the sound would loop back on itself.");
     captureCombo_->setToolTip(routingTip);
     renderCombo_->setToolTip(routingTip);
 
     layout->addLayout(grid);
 
-    rememberDeviceCheck_ = new QCheckBox(
-        QStringLiteral("この出力先の設定として覚える"));
-    rememberDeviceCheck_->setToolTip(QStringLiteral(
-        "いまのプリセット・効果の強さ・出力音量を、この出力先に結び付けて覚えます。\n"
-        "次にこの出力先へ切り替えたとき、自動で戻ります。"));
+    rememberDeviceCheck_ = new QCheckBox(tr("Remember these settings for this output"));
+    rememberDeviceCheck_->setToolTip(
+        tr("Ties the current preset, amounts, volume and balance to this output\n"
+           "device. Switching back to it restores them."));
     connect(rememberDeviceCheck_, &QCheckBox::toggled, this,
             &MainWindow::onRememberDeviceToggled);
     layout->addWidget(rememberDeviceCheck_);
 
-    takeOverCheck_ = new QCheckBox(
-        QStringLiteral("動作中は「取り込み元」を Windows の既定の出力にする"));
-    takeOverCheck_->setToolTip(QStringLiteral(
-        "開始したときに既定の出力を取り込み元へ切り替え、停止したときに元へ戻します。\n"
-        "オフにすると、切り替えは手動になります。"));
+    takeOverCheck_ = new QCheckBox(tr("Make the capture source the Windows default while running"));
+    takeOverCheck_->setToolTip(
+        tr("Switches the default output to the capture source on start and puts\n"
+           "it back on stop. Off, the switching is yours to do."));
     connect(takeOverCheck_, &QCheckBox::toggled, this, &MainWindow::onTakeOverToggled);
     layout->addWidget(takeOverCheck_);
 
-    startWithWindowsCheck_ = new QCheckBox(QStringLiteral("Windows の起動時に開始する"));
+    startWithWindowsCheck_ = new QCheckBox(tr("Start with Windows"));
     connect(startWithWindowsCheck_, &QCheckBox::toggled, this,
             &MainWindow::onStartWithWindowsToggled);
     layout->addWidget(startWithWindowsCheck_);
+
+    // Language sits here rather than in a settings dialog of its own. There is
+    // no such dialog, and one control does not justify inventing one; this
+    // column already holds the settings that are chosen once and left alone.
+    auto* languageRow = new QHBoxLayout;
+    languageRow->addWidget(new QLabel(tr("Language")));
+    languageCombo_ = new QComboBox;
+    // The two named languages are written in themselves, not translated. A
+    // reader who has landed in the wrong language needs to recognise their own,
+    // and "Japanese" is no help to somebody who cannot read the interface it is
+    // written in.
+    languageCombo_->addItem(tr("Same as Windows"), languageToString(Language::System));
+    languageCombo_->addItem(QStringLiteral("English"), languageToString(Language::English));
+    languageCombo_->addItem(QString::fromUtf8("\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E"),
+                            languageToString(Language::Japanese));
+    connect(languageCombo_, &QComboBox::currentIndexChanged, this, &MainWindow::onLanguageChanged);
+    languageRow->addWidget(languageCombo_, 1);
+    layout->addLayout(languageRow);
 
     return group;
 }
@@ -439,16 +465,16 @@ QWidget* MainWindow::buildFooter() {
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(8);
 
-    powerButton_ = new QPushButton(QStringLiteral("開始"));
+    powerButton_ = new QPushButton(tr("Start"));
     powerButton_->setCheckable(true);
     connect(powerButton_, &QPushButton::toggled, this, &MainWindow::onPowerToggled);
 
     // Press and hold is the natural gesture for an A/B: you hear the difference
     // while the button is down and the processing returns when you let go.
-    compareButton_ = new QPushButton(QStringLiteral("処理前の音"));
-    compareButton_->setToolTip(QStringLiteral(
-        "押している間だけ補正を外します。経路も遅延も変わらないので、\n"
-        "聞き比べているのは処理の効果だけです。"));
+    compareButton_ = new QPushButton(tr("Sound before processing"));
+    compareButton_->setToolTip(
+        tr("Removes the correction while held. The path and the latency do not\n"
+           "change, so what you are comparing is the processing alone."));
     connect(compareButton_, &QPushButton::pressed, this,
             [this] { controller_.setBypass(true); });
     connect(compareButton_, &QPushButton::released, this,
@@ -491,22 +517,22 @@ void MainWindow::buildTrayIcon() {
     versionAction->setEnabled(false);
     trayMenu_->addSeparator();
 
-    trayPowerAction_ = trayMenu_->addAction(QStringLiteral("開始"));
+    trayPowerAction_ = trayMenu_->addAction(tr("Start"));
     trayPowerAction_->setCheckable(true);
     connect(trayPowerAction_, &QAction::toggled, this,
             [this](bool on) { powerButton_->setChecked(on); });
 
-    trayPresetMenu_ = trayMenu_->addMenu(QStringLiteral("プリセット"));
+    trayPresetMenu_ = trayMenu_->addMenu(tr("Presets"));
 
     trayMenu_->addSeparator();
-    QAction* showAction = trayMenu_->addAction(QStringLiteral("ウィンドウを表示"));
+    QAction* showAction = trayMenu_->addAction(tr("Show window"));
     connect(showAction, &QAction::triggered, this, [this] {
         showNormal();
         raise();
         activateWindow();
     });
 
-    QAction* quitAction = trayMenu_->addAction(QStringLiteral("終了"));
+    QAction* quitAction = trayMenu_->addAction(tr("Quit"));
     connect(quitAction, &QAction::triggered, this, [this] {
         quitting_ = true;
         QApplication::quit();
@@ -558,15 +584,15 @@ void MainWindow::reloadPresets() {
     const int rowHeight = std::max(22, presetList_->fontMetrics().height() + 6);
 
     for (int i = 0; i < presets_.size(); ++i) {
-        QString label = qs(presets_[i].name);
+        QString label = presetName(presets_[i]);
         if (i >= userPresetStartIndex_) {
-            label += QStringLiteral("  (自分の設定)");
+            label += tr("  (your own)");
         }
         auto* item = new QListWidgetItem(label, presetList_);
         item->setSizeHint(QSize(0, rowHeight));
 
         if (trayPresetMenu_ != nullptr) {
-            QAction* action = trayPresetMenu_->addAction(qs(presets_[i].name));
+            QAction* action = trayPresetMenu_->addAction(presetName(presets_[i]));
             connect(action, &QAction::triggered, this,
                     [this, i] { presetList_->setCurrentRow(i); });
         }
@@ -594,14 +620,24 @@ void MainWindow::refreshDeviceLists() {
     captureCombo_->clear();
     renderCombo_->clear();
 
+    // Carried alongside the list rather than recovered from the labels. The
+    // marker used to be found by searching the item text for "[default]", which
+    // worked only for as long as that text never changed — and translating the
+    // interface changes it. A flag that the enumeration already provides cannot
+    // be broken by rewording anything.
+    QString defaultId;
     for (const DeviceChoice& device : controller_.availableDevices()) {
         const QString label =
-            device.isDefault ? device.displayName + QStringLiteral("  [既定]") : device.displayName;
+            device.isDefault ? device.displayName + tr("  [default]") : device.displayName;
         captureCombo_->addItem(label, device.id);
         renderCombo_->addItem(label, device.id);
+        if (device.isDefault) {
+            defaultId = device.id;
+        }
     }
 
-    const auto selectOrDefault = [](QComboBox* combo, const QString& id, bool preferDefault) {
+    const auto selectOrDefault = [&defaultId](QComboBox* combo, const QString& id,
+                                             bool preferDefault) {
         const int index = combo->findData(id);
         if (index >= 0) {
             combo->setCurrentIndex(index);
@@ -610,7 +646,8 @@ void MainWindow::refreshDeviceLists() {
         // Falling back to the system default is the useful guess for the
         // capture side; for the output it only avoids an empty box.
         for (int i = 0; i < combo->count(); ++i) {
-            if (combo->itemText(i).contains(QStringLiteral("[既定]")) == preferDefault) {
+            const bool isDefault = !defaultId.isEmpty() && combo->itemData(i) == defaultId;
+            if (isDefault == preferDefault) {
                 combo->setCurrentIndex(i);
                 return;
             }
@@ -653,7 +690,7 @@ void MainWindow::onPresetSelectionChanged() {
         return;
     }
 
-    presetDescription_->setText(qs(preset->description));
+    presetDescription_->setText(presetDescription(*preset));
     updatePresetActions();
 
     if (!loading_) {
@@ -678,6 +715,31 @@ void MainWindow::onSliderChanged() {
     }
     applyCurrentSettings();
     persistSettings();
+}
+
+void MainWindow::onLanguageChanged() {
+    if (loading_) {
+        return;
+    }
+    const Language chosen = languageFromString(languageCombo_->currentData().toString());
+    if (chosen == settings_.language) {
+        return;
+    }
+    settings_.language = chosen;
+    persistSettings();
+
+    // Deliberately not retranslated in place.
+    //
+    // Qt can do that — a changeEvent handler re-running every setText — but it
+    // means every string in the window has to be reachable from one function
+    // and kept in step with where it was set. That is a second copy of the
+    // whole interface, and the copy is the one that rots: a control added later
+    // gets its text in the builder and nobody remembers the other place.
+    //
+    // Changing the language is something a user does once. Asking them to
+    // restart is a fair price for not carrying that duplicate.
+    QMessageBox::information(this, QStringLiteral("AudioLens"),
+                             tr("The language will change when AudioLens is restarted."));
 }
 
 void MainWindow::onRememberDeviceToggled(bool enabled) {
@@ -851,9 +913,14 @@ void MainWindow::onSaveUserPreset() {
     }
 
     bool accepted = false;
-    const QString name = QInputDialog::getText(
-        this, QStringLiteral("設定を保存"), QStringLiteral("名前を付けてください:"),
-        QLineEdit::Normal, qs(base->name) + QStringLiteral(" (自分用)"), &accepted);
+    // The suggested name and the description are built from the *translated*
+    // base name, and are then stored as plain text. A preset the user saved is
+    // theirs, and the words in it should stay as they were when they saved it
+    // rather than shifting the next time the interface language changes.
+    const QString baseName = presetName(*base);
+    const QString name =
+        QInputDialog::getText(this, tr("Save settings"), tr("Give it a name:"), QLineEdit::Normal,
+                              tr("%1 (mine)").arg(baseName), &accepted);
     if (!accepted || name.trimmed().isEmpty()) {
         return;
     }
@@ -861,12 +928,12 @@ void MainWindow::onSaveUserPreset() {
     Preset preset = *base;
     preset.id = SettingsStore::makeUserPresetId(name).toStdString();
     preset.name = name.trimmed().toStdString();
-    preset.description = QStringLiteral("%1 をもとに調整した設定です。").arg(qs(base->name)).toStdString();
+    preset.description = tr("Adjusted from %1.").arg(baseName).toStdString();
     preset.sliders = currentSliders();
 
     QString error;
     if (!store_.saveUserPreset(preset, &error)) {
-        QMessageBox::warning(this, QStringLiteral("保存できません"), error);
+        QMessageBox::warning(this, tr("Cannot save"), error);
         return;
     }
 
@@ -881,16 +948,15 @@ void MainWindow::onDeleteUserPreset() {
         return;
     }
 
-    const QString name = qs(presets_[row].name);
-    if (QMessageBox::question(this, QStringLiteral("削除の確認"),
-                              QStringLiteral("「%1」を削除します。よろしいですか?").arg(name)) !=
-        QMessageBox::Yes) {
+    const QString name = presetName(presets_[row]);
+    if (QMessageBox::question(this, tr("Confirm deletion"),
+                              tr("Delete \"%1\"?").arg(name)) != QMessageBox::Yes) {
         return;
     }
 
     QString error;
     if (!store_.deleteUserPreset(qs(presets_[row].id), &error)) {
-        QMessageBox::warning(this, QStringLiteral("削除できません"), error);
+        QMessageBox::warning(this, tr("Cannot delete"), error);
         return;
     }
 
@@ -954,11 +1020,10 @@ bool MainWindow::acquireDefaultDevice() {
     if (!DefaultDeviceGuard::acquire(captureId, controller_.renderDeviceId(), previous, &error)) {
         settings_.previousDefaultDeviceId.clear();
         store_.saveSettings(settings_);
-        QMessageBox::warning(
-            this, QStringLiteral("AudioLens"),
-            QStringLiteral("既定の出力デバイスを切り替えられませんでした。\n%1\n\n"
-                           "Windows のサウンド設定から「%2」を既定の出力にしてください。")
-                .arg(error, captureCombo_->currentText()));
+        QMessageBox::warning(this, QStringLiteral("AudioLens"),
+                             tr("Could not change the default output device.\n%1\n\n"
+                                "Set \"%2\" as the default output in Windows sound settings.")
+                                 .arg(error, captureCombo_->currentText()));
         return false;
     }
     return true;
@@ -995,11 +1060,11 @@ void MainWindow::repairStrandedDefaultDevice() {
             continue;
         }
         if (setDefaultRenderDevice(candidate.toStdWString(), &error)) {
-            AL_INFO("前回の終了時に戻せなかった既定の出力デバイスを復元しました。");
+            AL_INFO("Restored the default output device the previous run left behind.");
             return;
         }
     }
-    AL_WARN("既定の出力デバイスを復元できません: {}", error);
+    AL_WARN("Could not restore the default output device: {}", error);
 }
 
 void MainWindow::applyCurrentSettings() {
@@ -1028,22 +1093,21 @@ void MainWindow::updateStatusLabel(const EngineStatus& status) {
         // about the chain's look-ahead, so the old wording — "of which
         // processing is N ms" — understated the total by exactly that much.
         const double processing = controller_.dspLatencyMs();
-        QString text = QStringLiteral("動作中  遅延 %1 ms")
-                           .arg(status.latencyMs + processing, 0, 'f', 1);
+        QString text = tr("Running  latency %1 ms").arg(status.latencyMs + processing, 0, 'f', 1);
         if (processing > 0.0) {
-            text += QStringLiteral("(バッファ %1 / 処理 %2)")
+            text += tr("(buffer %1 / processing %2)")
                         .arg(status.latencyMs, 0, 'f', 1)
                         .arg(processing, 0, 'f', 1);
         } else {
-            text += QStringLiteral("(補正なし)");
+            text += tr("(no correction)");
         }
         if (status.captureSampleRate != status.renderSampleRate && status.captureSampleRate > 0) {
-            text += QStringLiteral("  %1→%2 Hz 変換")
+            text += tr("  %1 -> %2 Hz conversion")
                         .arg(status.captureSampleRate)
                         .arg(status.renderSampleRate);
         }
         if (status.underruns > 0 || status.overruns > 0) {
-            text += QStringLiteral("  途切れ %1 回").arg(status.underruns + status.overruns);
+            text += tr("  %1 dropout(s)").arg(status.underruns + status.overruns);
         }
         // Shown separately from the dropout count because it is a different
         // fault with a different sound. A dropout is the ring running dry; this
@@ -1051,7 +1115,7 @@ void MainWindow::updateStatusLabel(const EngineStatus& status) {
         // is heard as a click rather than a gap. Reported in milliseconds
         // because a frame count means nothing to the person hearing it.
         if (status.silenceFillFrames > 0 && status.captureSampleRate > 0) {
-            text += QStringLiteral("  無音補填 %1 ms")
+            text += tr("  %1 ms silence inserted")
                         .arg(1000.0 * static_cast<double>(status.silenceFillFrames) /
                                  status.captureSampleRate,
                              0, 'f', 0);
@@ -1060,9 +1124,9 @@ void MainWindow::updateStatusLabel(const EngineStatus& status) {
     } else if (status.recovering) {
         statusLabel_->setText(status.message);
     } else if (!status.message.isEmpty()) {
-        statusLabel_->setText(QStringLiteral("停止中 — ") + status.message);
+        statusLabel_->setText(tr("Stopped - ") + status.message);
     } else {
-        statusLabel_->setText(QStringLiteral("停止中"));
+        statusLabel_->setText(tr("Stopped"));
     }
 
     // While recovering, leave the switch on: the user asked for it to be
@@ -1075,8 +1139,8 @@ void MainWindow::updateStatusLabel(const EngineStatus& status) {
     // Both directions, not just the stopping one. The engine can stop for good
     // — a device unplugged with nothing usable to replace it — and it can also
     // come back on its own long afterwards, once whatever was missing is
-    // plugged in again. A switch that only ever moves to 開始 would leave the
-    // second case showing the app as stopped while it was in fact running.
+    // plugged in again. A switch that only ever moved to "Start" would leave
+    // the second case showing the app as stopped while it was in fact running.
     if (status.running != powerButton_->isChecked()) {
         syncPowerUi(status.running);
     }
@@ -1088,12 +1152,12 @@ void MainWindow::syncPowerUi(bool on) {
     // time on the strength of the display catching up.
     QSignalBlocker buttonBlocker(powerButton_);
     powerButton_->setChecked(on);
-    powerButton_->setText(on ? QStringLiteral("停止") : QStringLiteral("開始"));
+    powerButton_->setText(on ? tr("Stop") : tr("Start"));
 
     if (trayPowerAction_ != nullptr) {
         QSignalBlocker trayBlocker(trayPowerAction_);
         trayPowerAction_->setChecked(on);
-        trayPowerAction_->setText(on ? QStringLiteral("停止") : QStringLiteral("開始"));
+        trayPowerAction_->setText(on ? tr("Stop") : tr("Start"));
     }
     if (tray_ != nullptr) {
         tray_->setIcon(makeApplicationIcon(on));

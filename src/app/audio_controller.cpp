@@ -1,4 +1,4 @@
-#include "app/audio_controller.h"
+﻿#include "app/audio_controller.h"
 
 #include "common/com.h"
 #include "common/log.h"
@@ -76,7 +76,7 @@ AudioController::AudioController(QObject* parent) : QObject(parent) {
         &watchError)) {
         // Not fatal: without the watcher, recovery falls back to the retry
         // timer noticing the engine has stopped.
-        qWarning("デバイス変更の監視を開始できません: %s", watchError.c_str());
+        qWarning("Could not start watching for device changes: %s", watchError.c_str());
     }
 }
 
@@ -144,13 +144,13 @@ bool AudioController::start() {
     }
 
     if (captureId_.isEmpty() || renderId_.isEmpty()) {
-        lastError_ = QStringLiteral("取り込み元と出力先を選んでください。");
+        lastError_ = tr("Choose a capture source and an output.");
         emit statusChanged(status());
         return false;
     }
     if (captureId_ == renderId_) {
-        lastError_ = QStringLiteral(
-            "取り込み元と出力先が同じデバイスです。音が回り込むため、別のデバイスを選んでください。");
+        lastError_ = tr("The capture source and the output are the same device. "
+                        "The sound would loop back, so choose a different one.");
         emit statusChanged(status());
         return false;
     }
@@ -218,7 +218,7 @@ void AudioController::onDeviceChanged() {
     // not by a timer, and a device that connects and immediately drops is
     // caught by the kHealthyPolls rule below instead.
     if (userWantsRunning_ && !running()) {
-        AL_INFO("デバイスが変化しました。再接続を試み直します。");
+        AL_INFO("A device changed; arming reconnection again.");
         recovering_ = true;
         recoveryAttempts_ = 0;
         pollsUntilRetry_ = 2;
@@ -257,7 +257,7 @@ bool AudioController::attemptRecovery() {
     wasRunning_ = true;
     recovering_ = false;
     pollsSinceStart_ = 0;
-    AL_INFO("再接続しました ({} 回目): 取り込み {} / 出力 {}", recoveryAttempts_ + 1,
+    AL_INFO("Reconnected (attempt {}): capture {} / render {}", recoveryAttempts_ + 1,
             captureId_.toStdString(), renderId_.toStdString());
     recoveryAttempts_ = 0;
     return true;
@@ -291,9 +291,7 @@ EngineStatus AudioController::status() const {
     s.recovering = recovering_;
 
     if (!s.running) {
-        s.message = recovering_
-                        ? QStringLiteral("音声デバイスが変わりました。接続し直しています...")
-                        : lastError_;
+        s.message = recovering_ ? tr("An audio device changed. Reconnecting...") : lastError_;
     }
     return s;
 }
@@ -335,9 +333,9 @@ void AudioController::reportDropouts() {
     // went wrong — not whether the ring ran dry or overflowed, which call for
     // opposite fixes. The fill at the time says how far from target it ended.
     AL_WARN(
-        "途切れ: underrun {} (+{}) / overrun {} (+{}, 空白 {} 箇所) / "
-        "再同期 {} (+{}, 破棄 {:.0f} ms) / "
-        "不連続 {} / リング {:.1f} ms (最小 {:.1f} / 最大 {:.1f} / 容量 {:.1f})",
+        "dropouts: underrun {} (+{}) / overrun {} (+{}, {} gap(s)) / "
+        "resync {} (+{}, dropped {:.0f} ms) / "
+        "discontinuities {} / ring {:.1f} ms (min {:.1f} / max {:.1f} / capacity {:.1f})",
         static_cast<unsigned long long>(under),
         static_cast<unsigned long long>(under - loggedUnderruns_),
         static_cast<unsigned long long>(over),
@@ -370,7 +368,7 @@ void AudioController::poll() {
         // Logged, not just shown: this is the event a user reports as "the
         // sound suddenly stopped", and by the time they say so the status line
         // has moved on.
-        AL_WARN("エンジンが停止しました: {} — 再接続を試みます", fault);
+        AL_WARN("The engine stopped: {} - attempting to reconnect", fault);
         lastError_ = QString::fromStdString(fault);
         engine_.stop();  // also consumes the fault, so this branch runs once
         wasRunning_ = false;
@@ -397,11 +395,11 @@ void AudioController::poll() {
         }
 
         if (++recoveryAttempts_ >= kMaxRecoveryAttempts) {
-            AL_WARN("再接続を {} 回試みましたが、使用できるデバイスが見つかりません。",
+            AL_WARN("Gave up after {} reconnection attempts; no usable device.",
                     kMaxRecoveryAttempts);
             recovering_ = false;
-            lastError_ = QStringLiteral("使用できる音声デバイスが見つかりません。"
-                                        "デバイスを選び直してから開始してください。");
+            lastError_ = tr("No usable audio device was found. "
+                            "Choose the devices again and start.");
             emit statusChanged(status());
         }
         return;

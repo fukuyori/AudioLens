@@ -1,5 +1,7 @@
 #include "app/default_device_guard.h"
+#include "app/i18n.h"
 #include "app/main_window.h"
+#include "app/settings_store.h"
 #include "common/com.h"
 #include "common/log.h"
 
@@ -53,14 +55,23 @@ int main(int argc, char** argv) {
     // Beside the settings, which is where a user already knows to look, and
     // opened before the window so that a failure during startup is recorded
     // too. A windowed process has no console, so without this every diagnostic
-    // the app produces is discarded — including the ones from a fault that
+    // the app produces is discarded - including the ones from a fault that
     // happened overnight, which are the only ones nobody can watch happen.
     const QString dataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     if (!dataDir.isEmpty() && QDir().mkpath(dataDir)) {
         const QString logPath = QDir(dataDir).filePath(QStringLiteral("audiolens.log"));
         audiolens::setLogFile(logPath.toStdString());
     }
-    AL_INFO("AudioLens {} 起動", AUDIOLENS_VERSION);
+    AL_INFO("AudioLens {} starting", AUDIOLENS_VERSION);
+
+    // Before the window is constructed, because every string it builds is
+    // translated at construction time. Installing a catalogue afterwards would
+    // leave the interface in whatever language it was first laid out in.
+    audiolens::app::SettingsStore store;
+    const audiolens::app::Language language =
+        audiolens::app::installTranslator(app, store.loadSettings().language);
+    AL_INFO("Interface language: {}",
+            audiolens::app::languageToString(language).toStdString());
 
     audiolens::app::MainWindow window;
     if (!startMinimized) {
