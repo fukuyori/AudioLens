@@ -11,6 +11,7 @@
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDir>
+#include <QEvent>
 #include <QFrame>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -31,6 +32,7 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <initializer_list>
 
 namespace audiolens::app {
 namespace {
@@ -57,6 +59,36 @@ QFrame* makeSeparator() {
     return line;
 }
 
+/// The balance slider's readout: L30 / 0 / R30.
+///
+/// A bare signed number would make the user work out which end is which. "左"
+/// and "右" say it outright, but a full-width character is nearly twice the
+/// width of a Latin one, and this readout shares a grid column with the plain
+/// numbers above it — so the widest thing it can ever show sets how much room
+/// every slider in the group has left. L and R are what the labelling on every
+/// piece of audio hardware uses, in a third of the space.
+QString balanceText(int balance) {
+    if (balance == 0) {
+        return QStringLiteral("0");
+    }
+    return balance < 0 ? QStringLiteral("L%1").arg(-balance)
+                       : QStringLiteral("R%1").arg(balance);
+}
+
+/// One column of the main window. The trailing stretch is what keeps the three
+/// columns independent: without it the shortest column's group box would be
+/// pulled tall to match the tallest one, and a half-empty box of stretched
+/// controls reads as a layout mistake.
+QVBoxLayout* makeColumn(std::initializer_list<QWidget*> sections) {
+    auto* column = new QVBoxLayout;
+    column->setSpacing(12);
+    for (QWidget* section : sections) {
+        column->addWidget(section);
+    }
+    column->addStretch(1);
+    return column;
+}
+
 }  // namespace
 
 MainWindow::MainWindow() {
@@ -75,12 +107,23 @@ MainWindow::MainWindow() {
     layout->setContentsMargins(16, 16, 16, 12);
     layout->setSpacing(12);
 
-    layout->addWidget(buildPresetSection());
-    layout->addWidget(buildSliderSection());
-    layout->addWidget(buildMeterSection());
-    layout->addWidget(makeSeparator());
-    layout->addWidget(buildDeviceSection());
-    layout->addStretch(1);
+    // Three columns rather than one tall stack: what you pick (preset), what you
+    // adjust and what it is doing (amounts + meters), and where the sound goes
+    // (routing). Stacked vertically these came to ~1000 px and the lower half
+    // was off screen on a laptop; side by side each column is short enough to
+    // read at a glance, and the meters sit next to the sliders that move them.
+    //
+    // The group boxes already draw the boundaries, so the separator that used to
+    // divide the routing from the rest is gone — a column edge says the same
+    // thing.
+    auto* columns = new QHBoxLayout;
+    columns->setSpacing(14);
+
+    columns->addLayout(makeColumn({buildPresetSection()}), 1);
+    columns->addLayout(makeColumn({buildSliderSection(), buildMeterSection()}), 1);
+    columns->addLayout(makeColumn({buildDeviceSection()}), 1);
+
+    layout->addLayout(columns, 1);
     layout->addWidget(buildFooter());
 
     setCentralWidget(central);
@@ -103,6 +146,7 @@ MainWindow::MainWindow() {
     startWithWindowsCheck_->setChecked(settings_.startWithWindows);
     takeOverCheck_->setChecked(settings_.takeOverDefaultDevice);
     volumeSlider_->setValue(settings_.outputVolume);
+    balanceSlider_->setValue(settings_.balance);
     selectPresetById(settings_.activePresetId);
 
     // On a first run there are no stored slider positions, so the preset's own
@@ -117,6 +161,7 @@ MainWindow::MainWindow() {
 
     updateSliderLabels();
     onOutputVolumeChanged();
+    onBalanceChanged();
     applyCurrentSettings();
     onDeviceChanged();
     updateStatusLabel(controller_.status());
@@ -128,7 +173,10 @@ MainWindow::MainWindow() {
         powerButton_->setChecked(true);  // runs onPowerToggled, which starts it
     }
 
-    resize(480, 700);
+    // Wide and short is the shape three columns want. The height is the tallest
+    // column (the preset list, which is sized to whole rows) plus the footer;
+    // anything more is empty space under all three at once.
+    resize(1020, 425);
 }
 
 MainWindow::~MainWindow() {
@@ -186,9 +234,13 @@ QWidget* MainWindow::buildSliderSection() {
     auto* grid = new QGridLayout(group);
     grid->setColumnStretch(1, 1);
 
+    // No explanatory line under each slider. The names carry it, and three
+    // greyed sentences repeated on every screenshot are read once and then
+    // become noise that the eye has to step over on the way to the control.
+    // The tooltips keep the wording for anyone who wants it.
     struct Row {
         const char* label;
-        const char* hint;
+        const char* tip;
         QSlider** slider;
         QLabel** value;
     };
@@ -201,10 +253,12 @@ QWidget* MainWindow::buildSliderSection() {
     int row = 0;
     for (const Row& r : rows) {
         auto* name = new QLabel(QString::fromUtf8(r.label));
+        name->setToolTip(QString::fromUtf8(r.tip));
         *r.slider = new QSlider(Qt::Horizontal);
         (*r.slider)->setRange(0, 100);
         (*r.slider)->setSingleStep(1);
         (*r.slider)->setPageStep(10);
+        (*r.slider)->setToolTip(QString::fromUtf8(r.tip));
         connect(*r.slider, &QSlider::valueChanged, this, &MainWindow::onSliderChanged);
 
         *r.value = new QLabel(QStringLiteral("0"));
@@ -214,8 +268,7 @@ QWidget* MainWindow::buildSliderSection() {
         grid->addWidget(name, row, 0);
         grid->addWidget(*r.slider, row, 1);
         grid->addWidget(*r.value, row, 2);
-        grid->addWidget(makeHint(QString::fromUtf8(r.hint)), row + 1, 1, 1, 2);
-        row += 2;
+        ++row;
     }
 
     // Volume sits with the other sliders rather than in a box of its own. It is
@@ -242,12 +295,61 @@ QWidget* MainWindow::buildSliderSection() {
     grid->addWidget(volumeName, row, 0);
     grid->addWidget(volumeSlider_, row, 1);
     grid->addWidget(volumeValue_, row, 2);
+    ++row;
+
+    auto* balanceName = new QLabel(QStringLiteral("左右"));
+    balanceSlider_ = new QSlider(Qt::Horizontal);
+    balanceSlider_->setRange(-50, 50);
+    balanceSlider_->setSingleStep(1);
+    balanceSlider_->setPageStep(5);
+    balanceSlider_->setToolTip(QStringLiteral(
+        "左右の聞こえ方が違うときに、大きく聞こえる側を下げて釣り合わせます。\n"
+        "ダブルクリックで中央に戻ります。"));
+    balanceSlider_->installEventFilter(this);
+    connect(balanceSlider_, &QSlider::valueChanged, this, &MainWindow::onBalanceChanged);
+
+    // The readout is also the reset. A control that can be moved off a
+    // meaningful default needs one click back to it, and the value being shown
+    // is the obvious thing to click: it is already where the eye goes to find
+    // out where the balance is.
+    //
+    // Flat, so it reads as the same kind of readout as the numbers above it
+    // until the pointer is over it — at which point the hover highlight says it
+    // does something, which those numbers do not.
+    balanceValue_ = new QPushButton(balanceText(0));
+    balanceValue_->setFlat(true);
+    // Drawn as text, not as a box. A native button reserves padding meant for
+    // one carrying a job title, and four characters in that much chrome made
+    // the value column wide enough to take 27 px off every slider in the group
+    // — and a fixed width narrow enough to fix that clipped the text instead.
+    //
+    // Losing the frame settles both: the widget is now exactly as wide as the
+    // numbers above it and reads as one of them, and the underline on hover is
+    // what says it can be clicked. It stays a QPushButton so that it is still a
+    // button to the keyboard and to accessibility tools, which a QLabel with a
+    // mouse handler bolted on would not be.
+    balanceValue_->setStyleSheet(QStringLiteral(
+        "QPushButton { border: none; background: transparent; padding: 0px;"
+        "              text-align: right; }"
+        "QPushButton:hover { text-decoration: underline; }"));
+    // The same floor as the plain readouts above, so this row no longer widens
+    // the shared column and the sliders keep the width instead.
+    balanceValue_->setMinimumWidth(32);
+    balanceValue_->setCursor(Qt::PointingHandCursor);
+    balanceValue_->setFocusPolicy(Qt::NoFocus);
+    balanceValue_->setToolTip(QStringLiteral("L = 左、R = 右。クリックで中央(0)に戻します"));
+    connect(balanceValue_, &QPushButton::clicked, this,
+            [this] { balanceSlider_->setValue(0); });
+
+    grid->addWidget(balanceName, row, 0);
+    grid->addWidget(balanceSlider_, row, 1);
+    grid->addWidget(balanceValue_, row, 2);
 
     return group;
 }
 
 QWidget* MainWindow::buildMeterSection() {
-    auto* group = new QGroupBox(QStringLiteral("動作状況"));
+    auto* group = new QGroupBox(QStringLiteral("ボリューム"));
     auto* grid = new QGridLayout(group);
     grid->setColumnStretch(1, 1);
 
@@ -285,11 +387,15 @@ QWidget* MainWindow::buildDeviceSection() {
     grid->addWidget(captureCombo_, 0, 1);
     grid->addWidget(new QLabel(QStringLiteral("出力先")), 1, 0);
     grid->addWidget(renderCombo_, 1, 1);
-    layout->addLayout(grid);
+    // The same paragraph that used to sit here in grey, moved to where it is
+    // asked for rather than always on screen.
+    const QString routingTip = QStringLiteral(
+        "Windows の既定の出力デバイスを「取り込み元」に指定し、実際に聞くデバイスを\n"
+        "「出力先」に指定します。両方を同じにすると音が回り込むため設定できません。");
+    captureCombo_->setToolTip(routingTip);
+    renderCombo_->setToolTip(routingTip);
 
-    layout->addWidget(makeHint(QStringLiteral(
-        "Windows の既定の出力デバイスを「取り込み元」に指定し、実際に聞くデバイスを"
-        "「出力先」に指定します。両方を同じにすると音が回り込むため設定できません。")));
+    layout->addLayout(grid);
 
     rememberDeviceCheck_ = new QCheckBox(
         QStringLiteral("この出力先の設定として覚える"));
@@ -601,6 +707,7 @@ void MainWindow::storeDeviceProfile() {
     }
     profile.sliders = currentSliders();
     profile.outputVolume = volumeSlider_->value();
+    profile.balance = balanceSlider_->value();
     settings_.deviceProfiles.insert(renderId, profile);
 }
 
@@ -619,12 +726,16 @@ void MainWindow::applyDeviceProfile(const QString& renderDeviceId) {
         claritySlider_->setValue(it->sliders.clarity);
         levelingSlider_->setValue(it->sliders.leveling);
         volumeSlider_->setValue(it->outputVolume);
+        balanceSlider_->setValue(it->balance);
     }
     loading_ = wasLoading;
 
     if (it != settings_.deviceProfiles.constEnd()) {
+        settings_.outputVolume = volumeSlider_->value();
+        settings_.balance = balanceSlider_->value();
         updateSliderLabels();
         volumeValue_->setText(QString::number(volumeSlider_->value()));
+        balanceValue_->setText(balanceText(balanceSlider_->value()));
         applyCurrentSettings();
     }
 }
@@ -635,6 +746,38 @@ void MainWindow::onOutputVolumeChanged() {
         return;
     }
     settings_.outputVolume = volumeSlider_->value();
+    applyCurrentSettings();
+    persistSettings();
+}
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
+    // Double click on the slider is the gesture anyone who has used a mixer
+    // reaches for first. It is invisible, which is why it is the second way in
+    // and not the only one — the readout button is the discoverable one.
+    if (watched == balanceSlider_ && event->type() == QEvent::MouseButtonDblClick) {
+        balanceSlider_->setValue(0);
+        return true;
+    }
+    return QMainWindow::eventFilter(watched, event);
+}
+
+void MainWindow::onBalanceChanged() {
+    // A detent at the centre. Landing exactly on 0 with a mouse is otherwise
+    // fiddly, and the values being swallowed are worth 0.2 dB at most, which is
+    // well under what anyone can hear. Calling setValue re-enters this function
+    // with a value of 0, which then takes the ordinary path.
+    constexpr int kCentreDetent = 2;
+    const int raw = balanceSlider_->value();
+    if (raw != 0 && std::abs(raw) <= kCentreDetent) {
+        balanceSlider_->setValue(0);
+        return;
+    }
+
+    balanceValue_->setText(balanceText(raw));
+    if (loading_) {
+        return;
+    }
+    settings_.balance = raw;
     applyCurrentSettings();
     persistSettings();
 }
@@ -799,10 +942,10 @@ bool MainWindow::acquireDefaultDevice() {
         return true;
     }
     const QString captureId = controller_.captureDeviceId();
-    const QString previous = DefaultDeviceGuard::currentDefault();
-    if (captureId.isEmpty() || captureId == previous) {
-        return true;  // nothing to displace
+    if (captureId.isEmpty()) {
+        return true;  // nothing to route
     }
+    const QString previous = DefaultDeviceGuard::currentDefault();
 
     // Written *before* the switch. If the process dies between these two lines
     // the settings name a device that is still the default, and the repair at
@@ -811,7 +954,7 @@ bool MainWindow::acquireDefaultDevice() {
     store_.saveSettings(settings_);
 
     QString error;
-    if (!DefaultDeviceGuard::acquire(captureId, previous, &error)) {
+    if (!DefaultDeviceGuard::acquire(captureId, controller_.renderDeviceId(), previous, &error)) {
         settings_.previousDefaultDeviceId.clear();
         store_.saveSettings(settings_);
         QMessageBox::warning(
@@ -844,18 +987,29 @@ void MainWindow::repairStrandedDefaultDevice() {
     settings_.previousDefaultDeviceId.clear();
     store_.saveSettings(settings_);
 
+    // Same order as the clean exit: the output device first, the displaced one
+    // only if that fails. Both are already in the settings file, so this needs
+    // nothing extra recorded — and the reason for the order is stronger here
+    // than anywhere else, because a run that was killed is exactly the run
+    // whose displaced device might have been the cable itself.
     std::string error;
-    if (setDefaultRenderDevice(stranded.toStdWString(), &error)) {
-        AL_INFO("前回の終了時に戻せなかった既定の出力デバイスを復元しました。");
-    } else {
-        AL_WARN("既定の出力デバイスを復元できません: {}", error);
+    for (const QString& candidate : {settings_.renderDeviceId, stranded}) {
+        if (candidate.isEmpty()) {
+            continue;
+        }
+        if (setDefaultRenderDevice(candidate.toStdWString(), &error)) {
+            AL_INFO("前回の終了時に戻せなかった既定の出力デバイスを復元しました。");
+            return;
+        }
     }
+    AL_WARN("既定の出力デバイスを復元できません: {}", error);
 }
 
 void MainWindow::applyCurrentSettings() {
     const Preset* preset = currentPreset();
     if (preset != nullptr) {
-        controller_.applyPreset(*preset, currentSliders(), settings_.outputVolume);
+        controller_.applyPreset(*preset, currentSliders(), settings_.outputVolume,
+                                settings_.balance);
     }
 }
 
@@ -935,6 +1089,7 @@ void MainWindow::persistSettings() {
     settings_.renderDeviceId = renderCombo_->currentData().toString();
     settings_.sliders = currentSliders();
     settings_.outputVolume = volumeSlider_->value();
+    settings_.balance = balanceSlider_->value();
     // A remembered device follows whatever the user does next, so the profile is
     // refreshed alongside the ordinary settings rather than only when the
     // checkbox is ticked.

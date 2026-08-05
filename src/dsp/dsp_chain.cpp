@@ -131,6 +131,7 @@ void DspChain::updateSmoothedTargets() noexcept {
     approach(current_.highShelfGainDb, target_.highShelfGainDb, c);
     approach(current_.highShelfFreqHz, target_.highShelfFreqHz, c);
     approach(current_.sideGainDb, target_.sideGainDb, c);
+    approach(current_.balance, target_.balance, c);
 
     for (int i = 0; i < kMaxSpeechBands; ++i) {
         approach(current_.speechBands[i].gainDb, target_.speechBands[i].gainDb, c);
@@ -189,6 +190,12 @@ bool DspChain::coefficientsNeedRebuild() const noexcept {
         return true;
     }
 
+    // Balance is a fraction, not a gain in dB, so it gets its own tolerance.
+    // 0.001 of full travel is under 0.01 dB anywhere on the curve.
+    if (!nearlyEqual(current_.balance, built_.balance, 0.001)) {
+        return true;
+    }
+
     if (!nearlyEqual(current_.highpassFreqHz, built_.highpassFreqHz, kFreqTolerance) ||
         !nearlyEqual(current_.lowShelfFreqHz, built_.lowShelfFreqHz, kFreqTolerance) ||
         !nearlyEqual(current_.highShelfFreqHz, built_.highShelfFreqHz, kFreqTolerance) ||
@@ -237,6 +244,16 @@ void DspChain::rebuildCoefficients() noexcept {
     inputGainLinear_ = dbToLinear(current_.inputGainDb);
     outputGainLinear_ = dbToLinear(current_.outputGainDb);
     sideGainLinear_ = dbToLinear(current_.sideGainDb);
+
+    // Only the far side moves, and it moves linearly in amplitude. A taper like
+    // the master volume's would be wrong here: the master travels the whole way
+    // to silence and needs the range spread out, whereas balance is used almost
+    // entirely within a few dB of centre, and a linear law is what puts the
+    // resolution there (10 % off centre is 0.9 dB, half way is 6 dB).
+    const double balance = std::clamp(current_.balance, -1.0, 1.0);
+    balanceGain_[0] = balance > 0.0 ? static_cast<float>(1.0 - balance) : 1.0f;
+    balanceGain_[1] = balance < 0.0 ? static_cast<float>(1.0 + balance) : 1.0f;
+    balanceActive_ = channels_ == 2 && std::fabs(balance) > 1e-4;
 
     // Coming back from passthrough, every filter holds state from before it was
     // switched out. Left alone, that stale tail is emitted as the first thing
@@ -290,17 +307,24 @@ void DspChain::process(float* audio, std::size_t frames, std::uint32_t channels)
         updateMeter(meterInputPeak_, inputPeak, meterDecayPerSubBlock_);
 
         // Nothing to do but turn it down, and turning it down costs no delay.
-        // The master volume has to work here or "no processing" would mean "no
-        // volume control either"; letting it ride this path is what keeps the
-        // passthrough preset at zero latency while it does.
+        // The master volume and the balance both have to work here, or "no
+        // processing" would mean "no volume control and no balance either";
+        // letting them ride this path is what keeps the passthrough preset at
+        // zero latency while they do.
         //
         // Only attenuation reaches here. Anything that could raise the level
         // needs the limiter behind it, and resolveParameters() refuses to call
         // that a passthrough.
         if (current_.passthrough) {
-            if (outputGainLinear_ != 1.0f) {
-                for (std::size_t i = 0; i < count * channels; ++i) {
-                    block[i] *= outputGainLinear_;
+            const bool balanced = balanceActive_ && active == 2;
+            if (outputGainLinear_ != 1.0f || balanced) {
+                for (std::size_t f = 0; f < count; ++f) {
+                    float* frame = block + f * channels;
+                    for (std::uint32_t c = 0; c < channels; ++c) {
+                        const float trim =
+                            balanced && c < 2 ? balanceGain_[c] : 1.0f;
+                        frame[c] *= outputGainLinear_ * trim;
+                    }
                 }
                 updateMeter(meterOutputPeak_, blockPeak(block, count, channels),
                             meterDecayPerSubBlock_);
@@ -388,9 +412,14 @@ void DspChain::process(float* audio, std::size_t frames, std::uint32_t channels)
                 compressor_.processFrame(frame, active);
             }
 
+            // Balance rides along with the output gain, ahead of the limiter,
+            // so a channel turned down still has the limiter behind it. It only
+            // ever attenuates, so it cannot be what drives the limiter.
             const float slowGain = autoGain_.nextGain(frame, active);
+            const bool balanced = balanceActive_ && active == 2;
             for (std::uint32_t c = 0; c < active; ++c) {
-                frame[c] *= slowGain * outputGainLinear_;
+                const float trim = balanced ? balanceGain_[c] : 1.0f;
+                frame[c] *= slowGain * outputGainLinear_ * trim;
             }
 
             limiter_.processFrame(frame, channels);

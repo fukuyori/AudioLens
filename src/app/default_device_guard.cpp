@@ -15,7 +15,10 @@ namespace {
 /// Namespace-scope rather than members so the crash filter can reach them
 /// without touching any object that may be in the middle of being destroyed.
 std::mutex g_mutex;
-std::wstring g_previousDeviceId;
+/// Where to leave the default: the app's output device.
+std::wstring g_restoreDeviceId;
+/// Where to leave it if that one cannot be set: the device we displaced.
+std::wstring g_fallbackDeviceId;
 std::atomic<bool> g_held{false};
 
 LPTOP_LEVEL_EXCEPTION_FILTER g_previousFilter = nullptr;
@@ -28,16 +31,24 @@ void restoreUnlocked() {
     if (!g_held.exchange(false, std::memory_order_acq_rel)) {
         return;
     }
-    const std::wstring target = g_previousDeviceId;
-    g_previousDeviceId.clear();
-    if (target.empty()) {
-        return;
-    }
+    const std::wstring target = g_restoreDeviceId;
+    const std::wstring fallback = g_fallbackDeviceId;
+    g_restoreDeviceId.clear();
+    g_fallbackDeviceId.clear();
+
     // The crashing thread has no apartment of its own if the fault happened on
     // a worker, so claim one. This is best effort by definition.
     const ComApartment com;
     std::string error;
-    setDefaultRenderDevice(target, &error);
+    if (!target.empty() && setDefaultRenderDevice(target, &error)) {
+        return;
+    }
+    // The output device is gone or refused. The displaced device is the second
+    // chance; if it is also the cable this changes nothing, but there is
+    // nothing better left to try.
+    if (!fallback.empty() && fallback != target) {
+        setDefaultRenderDevice(fallback, &error);
+    }
 }
 
 LONG WINAPI crashFilter(EXCEPTION_POINTERS* info) {
@@ -52,15 +63,18 @@ QString DefaultDeviceGuard::currentDefault() {
     return QString::fromWCharArray(id.c_str(), static_cast<int>(id.size()));
 }
 
-bool DefaultDeviceGuard::acquire(const QString& deviceId, const QString& previousDeviceId,
-                                 QString* error) {
+bool DefaultDeviceGuard::acquire(const QString& deviceId, const QString& restoreDeviceId,
+                                 const QString& fallbackDeviceId, QString* error) {
     if (deviceId.isEmpty()) {
         if (error != nullptr) *error = QStringLiteral("取り込み元のデバイスが指定されていません。");
         return false;
     }
-    if (deviceId == previousDeviceId) {
-        return true;  // already there; nothing to hold and nothing to give back
-    }
+    // No early exit when the cable is already the default. It used to return
+    // here — nothing to displace, nothing to give back — but that is precisely
+    // the case where the machine goes silent on exit, because nobody put the
+    // default there on this run and so nobody takes it away either. Holding it
+    // anyway costs one redundant call to the policy interface and buys the
+    // restore on the way out.
 
     const std::lock_guard<std::mutex> lock(g_mutex);
 
@@ -72,7 +86,8 @@ bool DefaultDeviceGuard::acquire(const QString& deviceId, const QString& previou
 
     // Recorded only after the switch succeeded, so a failure can never leave a
     // restore pointing somewhere the system was not.
-    g_previousDeviceId = previousDeviceId.toStdWString();
+    g_restoreDeviceId = restoreDeviceId.toStdWString();
+    g_fallbackDeviceId = fallbackDeviceId.toStdWString();
     g_held.store(true, std::memory_order_release);
     return true;
 }

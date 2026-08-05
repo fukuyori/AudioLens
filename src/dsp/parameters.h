@@ -84,6 +84,18 @@ struct DspParameters {
     CompressorSettings compressor{};
 
     double outputGainDb = 0.0;
+
+    /// Left/right balance: -1 is fully left, 0 is centred, +1 is fully right.
+    /// Stereo only; ignored otherwise.
+    ///
+    /// Implemented by turning the far side *down*, never by turning the near
+    /// side up. Boosting would push a signal that was already at full scale
+    /// over it, which would need the limiter behind it — and the limiter is
+    /// exactly what `passthrough` exists to avoid. Attenuating cannot clip, so
+    /// balance stays available on the passthrough path at zero added latency,
+    /// which is the same bargain the master volume makes.
+    double balance = 0.0;
+
     LimiterSettings limiter{};
 };
 

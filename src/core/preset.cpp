@@ -165,44 +165,77 @@ Preset makeNight() {
     return p;
 }
 
-Preset makeOldRecording() {
+Preset makeGame() {
     Preset p;
-    p.id = "old_recording";
-    p.name = "古い録音";
-    p.description = "帯域の狭い古い音源を、聞き取りやすい方向へ補正します。";
-    p.sliders = {70, 80, 65};
+    p.id = "game";
+    p.name = "ゲーム";
+    p.description = "低域を削って中高域を立て、小さな音と方向を分かりやすくします。";
+    p.sliders = {80, 85, 55};
 
     PresetMapping& m = p.mapping;
-    m.highpassFreqAt100Hz = 150.0;
-    m.lowShelfGainAt100Db = -3.0;
+    // The most aggressive low cut in the set, and deliberately so. Explosions,
+    // engines and ambience all live below 200 Hz and none of them carry
+    // information a player acts on; a footstep does, and it does not. Taking
+    // the bottom out is what stops the rest from being masked by it.
+    m.highpassFreqAt100Hz = 200.0;
+    m.lowShelfFreqHz = 320.0;
+    m.lowShelfGainAt100Db = -7.0;
+    // Footsteps, reloads and cloth movement sit here, and so do the spectral
+    // cues the outer ear uses to tell front from behind and above from below.
+    // Three bands rather than one broad lift: a single wide bump would bring up
+    // the gunfire in the same range along with them.
     m.speechBandsAt100 = {
-        {1000.0, 0.9, 2.5},
-        {2400.0, 1.0, 5.5},
-        {4500.0, 1.0, 4.0},
+        {2200.0, 1.1, 4.0},
+        {4000.0, 1.2, 5.0},
+        {6500.0, 1.2, 3.5},
     };
-    // Old sources roll off early; a shelf restores some of the air they lack.
-    m.highShelfFreqHz = 6000.0;
-    m.highShelfGainAt100Db = 4.0;
-    // Left off deliberately. Old recordings are usually mono or fake stereo,
-    // where the side channel holds no dialogue to separate out — only whatever
-    // difference the transfer introduced. Trimming that would remove noise and
-    // nothing else, which is not what this stage is for.
-    m.midSideEnabled = false;
-    m.autoGainEnabled = true;
-    m.autoGainTargetLufs = -18.0;
-    m.autoGainRangeAt100Db = 10.0;
-    // Worst case in the set: a big speech lift *and* a +4 dB shelf at 6 kHz,
-    // both landing squarely on the sibilant band. Centred lower to match where
-    // the shelf sits.
-    m.deEsserEnabled = true;
-    m.deEsserFreqHz = 6000.0;
-    m.deEsserThresholdDb = -13.0;
-    m.deEsserAmountAt100 = 0.8;
-    m.deEsserMaxReductionAt100Db = 10.0;
-    m.compressorThresholdAt100Db = -28.0;
-    m.compressorRatioAt100 = 5.0;
-    m.compressorAttackMs = 12.0;
-    m.compressorReleaseMs = 250.0;
+    m.highShelfFreqHz = 9000.0;
+    m.highShelfGainAt100Db = 2.0;
+    // The one preset that *widens* rather than narrows. Everywhere else the
+    // side channel is held back to push a centred voice forward; here the side
+    // channel is the whole point, because the left/right difference is what a
+    // player localises with. Raising it exaggerates that difference.
+    //
+    // +2.5 dB and no more. Past roughly 3 dB the image stops widening and
+    // starts hollowing out: centre content begins to cancel, and in a game the
+    // centre is where the enemy directly ahead is.
+    m.midSideEnabled = true;
+    m.sideGainAt100Db = 2.5;
+    // Off, and this is the one place it costs something to say no to. The slow
+    // stage rides the overall gain over minutes, and level is one of the cues a
+    // player judges distance by — a footstep that gets louder because the last
+    // thirty seconds were quiet is a footstep that reads as closer than it is.
+    // Making quiet sounds audible is the compressor's job here, inside the
+    // event, where it does not move the reference.
+    m.autoGainEnabled = false;
+    // Off, and this is the only preset in the set where it is. The de-esser
+    // exists to tame the sharpness the speech bands add to a *voice*; in a game
+    // the same 6-8 kHz region is carrying glass, casings and distant fire, and
+    // those are direction, not sibilance. Measured on the dynamic test material,
+    // with it on 8 kHz landed 0.7 dB *below* the preset's own overall gain while
+    // 2.5 and 4 kHz were 2 dB above it — the stage was undoing the band above
+    // it. Off, 8 kHz sits 0.7 dB above instead, a 1.4 dB swing.
+    m.deEsserEnabled = false;
+    // A low threshold brings the quiet detail up, but the ratio stays moderate:
+    // at 8:1 a gunshot and a footstep end up the same size, and then there is
+    // no loudness left to judge distance with at all.
+    m.compressorThresholdAt100Db = -34.0;
+    m.compressorRatioAt100 = 3.5;
+    m.compressorAttackMs = 5.0;
+    m.compressorReleaseMs = 150.0;
+    m.compressorMakeupReferenceDb = -20.0;
+    // The only latency this app's DSP has is the limiter's look-ahead, so this
+    // is the only latency a preset can do anything about: 2.0 ms becomes
+    // 0.5 ms. The window still spans 24 samples at 48 kHz and the gain still
+    // reaches its target inside it, so it is a shorter limiter, not a broken
+    // one.
+    //
+    // Worth being clear about the size of this. End to end the app runs around
+    // 60 ms and nearly all of it is the WASAPI buffer, which this cannot touch
+    // and must not: buffer margin is what prevents dropouts, and dropouts are
+    // worse than latency. 1.5 ms is what is honestly available.
+    m.limiterLookaheadMs = 0.5;
+    m.limiterReleaseMs = 40.0;
     return p;
 }
 
@@ -516,6 +549,10 @@ double outputVolumeToDb(int volume) {
     return 20.0 * std::log10(fraction * fraction);
 }
 
+double balanceToOffset(int balance) {
+    return std::clamp(balance, -50, 50) / 50.0;
+}
+
 dsp::DspParameters resolveParameters(const Preset& preset) {
     return resolveParameters(preset, preset.sliders);
 }
@@ -526,7 +563,7 @@ const std::vector<Preset>& builtinPresets() {
         // hear, and the music presets are the ones that mostly stay out of the
         // way.
         makeStandard(),   makeConversation(), makeLecture(),
-        makeMovie(),      makeNight(),        makeOldRecording(),
+        makeMovie(),      makeNight(),        makeGame(),
         makeRock(),       makeJazz(),         makeClassical(),
         makeAmbient(),
     };

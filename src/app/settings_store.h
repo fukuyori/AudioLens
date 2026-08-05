@@ -19,6 +19,10 @@ struct DeviceProfile {
     QString presetId;
     SliderValues sliders;
     int outputVolume = 100;
+    /// Balance matters more per device than anything else here: a pair of
+    /// headphones and a pair of desk speakers are almost never off-centre by
+    /// the same amount, or in the same direction.
+    int balance = 0;
 };
 
 /// Everything the app remembers between runs, other than the presets.
@@ -43,6 +47,11 @@ struct AppSettings {
     /// what a volume control means to everyone who has ever used one.
     int outputVolume = 100;
 
+    /// Left/right balance, -50 (fully left) to +50 (fully right), 0 centred
+    /// (requirement F-24). Attenuation only, for the same reason as above: the
+    /// far channel is turned down, never the near one up.
+    int balance = 0;
+
     bool startWithWindows = false;
     bool startMinimized = false;
 
@@ -61,6 +70,11 @@ struct AppSettings {
     /// written *before* the switch and cleared *after* the restore. A non-empty
     /// value at startup therefore means the last run was killed without giving
     /// the device back, and the routing has to be repaired (requirement N-04).
+    ///
+    /// Two jobs, and the first is the important one: it is the *marker* that a
+    /// run ended badly. As a restore target it is only the second choice —
+    /// `renderDeviceId` is tried first, because the output device is known to be
+    /// audible whereas the displaced one may have been the cable itself.
     QString previousDefaultDeviceId;
 
     /// Remembered settings per output device, keyed by device id. A device with

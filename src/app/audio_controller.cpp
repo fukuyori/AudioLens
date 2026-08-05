@@ -218,13 +218,14 @@ bool AudioController::attemptRecovery() {
 }
 
 void AudioController::applyPreset(const Preset& preset, const SliderValues& sliders,
-                                  int outputVolume) {
+                                  int outputVolume, int balance) {
     dsp::DspParameters parameters = resolveParameters(preset, sliders);
-    // Added after the passthrough decision, and safely so: the master only ever
-    // attenuates, and an attenuation needs no limiter behind it. That is what
-    // lets the volume work on a preset that applies nothing without costing it
-    // the zero latency that makes it a passthrough.
+    // Both are added after the passthrough decision, and safely so: each only
+    // ever attenuates, and an attenuation needs no limiter behind it. That is
+    // what lets the volume and the balance work on a preset that applies
+    // nothing without costing it the zero latency that makes it a passthrough.
     parameters.outputGainDb += outputVolumeToDb(outputVolume);
+    parameters.balance = balanceToOffset(balance);
     chain_.setParameters(parameters);
 }
 

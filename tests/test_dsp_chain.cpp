@@ -99,6 +99,18 @@ std::vector<float> runPreset(const Preset& preset, const SliderValues& sliders,
     return runChain(resolveParameters(preset, sliders), std::move(audio));
 }
 
+/// RMS of one channel of an interleaved buffer, in dBFS, over the settled half.
+double settledChannelDbfs(const std::vector<float>& audio, std::uint32_t channel) {
+    const std::size_t frames = audio.size() / kChannels;
+    double sumOfSquares = 0.0;
+    for (std::size_t f = frames / 2; f < frames; ++f) {
+        const double s = audio[f * kChannels + channel];
+        sumOfSquares += s * s;
+    }
+    const double meanSquare = sumOfSquares / static_cast<double>(frames - frames / 2);
+    return meanSquare > 0.0 ? 10.0 * std::log10(meanSquare) : -1e9;
+}
+
 }  // namespace
 
 AL_TEST(DspChain_with_neutral_parameters_barely_changes_the_signal) {
@@ -358,7 +370,7 @@ AL_TEST(Presets_expose_sensible_metadata) {
         CHECK(!preset.mapping.speechBandsAt100.empty());
     }
 
-    for (const char* id : {"standard", "conversation", "lecture", "movie", "night", "old_recording"}) {
+    for (const char* id : {"standard", "conversation", "lecture", "movie", "night", "game"}) {
         CHECK(findBuiltinPreset(id) != nullptr);
     }
     CHECK(findBuiltinPreset("does_not_exist") == nullptr);
@@ -449,4 +461,187 @@ AL_TEST(OutputVolume_attenuates_without_costing_the_passthrough_its_latency) {
     const double after = bandLevelDbfs(audio, kChannels, kRate, 1000.0, 2.0);
 
     CHECK_NEAR(after - before, -12.0, 0.5);
+}
+
+AL_TEST(GamePreset_tilts_the_spectrum_up_and_shortens_the_limiter) {
+    const Preset* game = findBuiltinPreset("game");
+    CHECK(game != nullptr);
+    if (game == nullptr) return;
+
+    const DspParameters params = resolveParameters(*game, game->sliders);
+
+    // 低域を削り、中高域を際立たせる. Both halves are checked, because a low cut
+    // on its own would only make everything quieter.
+    CHECK(params.highpassEnabled);
+    CHECK(params.highpassFreqHz > 150.0);
+    CHECK(params.lowShelfGainDb < -4.0);
+    CHECK(params.speechBandCount == 3);
+    for (int i = 0; i < params.speechBandCount; ++i) {
+        CHECK(params.speechBands[i].freqHz >= 2000.0);
+        CHECK(params.speechBands[i].gainDb > 2.0);
+    }
+
+    // The only preset that widens instead of narrowing: the left/right
+    // difference is what a player localises with.
+    CHECK(params.midSideEnabled);
+    CHECK(params.sideGainDb > 0.0);
+    for (const Preset& other : builtinPresets()) {
+        if (other.id == "game") continue;
+        CHECK(resolveParameters(other, other.sliders).sideGainDb <= 0.0);
+    }
+
+    // 遅延を極力なくす. The look-ahead is the only latency a preset can affect,
+    // so this is the whole of it: a quarter of what every other preset costs.
+    DspChain chain;
+    chain.setParameters(params);
+    chain.prepare(kRate, kChannels, 512);
+    CHECK(chain.latencyMs() < 0.75);
+
+    const Preset* movie = findBuiltinPreset("movie");
+    CHECK(movie != nullptr);
+    if (movie == nullptr) return;
+    DspChain reference;
+    reference.setParameters(resolveParameters(*movie, movie->sliders));
+    reference.prepare(kRate, kChannels, 512);
+    CHECK(chain.latencyMs() < reference.latencyMs());
+}
+
+AL_TEST(Balance_maps_the_slider_to_a_signed_offset) {
+    using audiolens::balanceToOffset;
+
+    CHECK_NEAR(balanceToOffset(0), 0.0, 1e-12);
+    CHECK_NEAR(balanceToOffset(-50), -1.0, 1e-12);
+    CHECK_NEAR(balanceToOffset(50), 1.0, 1e-12);
+    CHECK_NEAR(balanceToOffset(25), 0.5, 1e-12);
+
+    // Out of range is clamped, not extrapolated: a balance past ±1 would invert
+    // the far channel rather than silence it.
+    CHECK_NEAR(balanceToOffset(-500), -1.0, 1e-12);
+    CHECK_NEAR(balanceToOffset(500), 1.0, 1e-12);
+}
+
+AL_TEST(Balance_turns_the_far_channel_down_and_leaves_the_near_one_alone) {
+    // The whole point of doing it by attenuation: whichever way the control is
+    // moved, one channel is untouched and the other only ever gets quieter.
+    // Nothing can end up louder than it arrived, so nothing needs a limiter.
+    DspParameters params;
+    params.limiter.ceilingDb = -1.0;
+    const std::vector<float> input = makeSine(1000.0, dbToLinear(-20.0), 1.0);
+
+    const double reference = settledChannelDbfs(input, 0);
+
+    // Half way left: the right channel drops 6 dB, the left does not move.
+    params.balance = audiolens::balanceToOffset(-25);
+    const std::vector<float> left = runChain(params, input);
+    CHECK_NEAR(settledChannelDbfs(left, 0), reference, 0.05);
+    CHECK_NEAR(settledChannelDbfs(left, 1) - reference, -6.02, 0.2);
+
+    // And symmetrically the other way.
+    params.balance = audiolens::balanceToOffset(25);
+    const std::vector<float> right = runChain(params, input);
+    CHECK_NEAR(settledChannelDbfs(right, 1), reference, 0.05);
+    CHECK_NEAR(settledChannelDbfs(right, 0) - reference, -6.02, 0.2);
+}
+
+AL_TEST(Balance_at_the_extreme_silences_one_channel) {
+    DspParameters params;
+    params.limiter.ceilingDb = -1.0;
+    params.balance = audiolens::balanceToOffset(-50);
+
+    const std::vector<float> output = runChain(params, makeSine(1000.0, dbToLinear(-20.0), 1.0));
+    CHECK(settledChannelDbfs(output, 1) < -100.0);
+    CHECK(settledChannelDbfs(output, 0) > -25.0);
+}
+
+AL_TEST(Balance_works_on_the_passthrough_without_costing_it_its_latency) {
+    // Same bargain as the master volume, and the same reason: the passthrough
+    // preset would stop being one if reaching for the balance quietly switched
+    // the look-ahead limiter back in.
+    const Preset* standard = findBuiltinPreset("standard");
+    CHECK(standard != nullptr);
+    if (standard == nullptr) return;
+
+    DspParameters params = resolveParameters(*standard, standard->sliders);
+    CHECK(params.passthrough);
+    params.balance = audiolens::balanceToOffset(-25);
+
+    DspChain chain;
+    chain.setParameters(params);
+    chain.prepare(kRate, kChannels, 512);
+    CHECK_NEAR(chain.latencyMs(), 0.0, 1e-9);
+
+    const std::vector<float> input = makeSine(1000.0, dbToLinear(-20.0), 1.0);
+    std::vector<float> audio = input;
+    chain.process(audio.data(), audio.size() / kChannels, kChannels);
+
+    // The near channel is untouched sample for sample, not merely close: on the
+    // passthrough path there is no filter state to settle.
+    double worst = 0.0;
+    for (std::size_t f = 0; f < audio.size() / kChannels; ++f) {
+        worst = std::max(worst, std::fabs(static_cast<double>(audio[f * kChannels]) -
+                                          input[f * kChannels]));
+    }
+    CHECK(worst == 0.0);
+    CHECK_NEAR(settledChannelDbfs(audio, 1) - settledChannelDbfs(input, 1), -6.02, 0.2);
+}
+
+AL_TEST(Balance_centred_changes_nothing_at_all) {
+    const Preset* standard = findBuiltinPreset("standard");
+    CHECK(standard != nullptr);
+    if (standard == nullptr) return;
+
+    DspParameters params = resolveParameters(*standard, standard->sliders);
+    params.balance = audiolens::balanceToOffset(0);
+
+    const std::vector<float> input = makeDynamicMaterial();
+    const std::vector<float> output = runChain(params, input);
+    CHECK(output == input);
+}
+
+AL_TEST(Balance_is_ignored_on_mono_material) {
+    // A mono stream has no far channel to turn down, and applying the trim to
+    // its only channel would read as the volume dropping on its own. Both paths
+    // through the chain have to make the same decision, so both are checked.
+    const auto frames = static_cast<std::size_t>(0.5 * kRate);
+    std::vector<float> input(frames, 0.0f);
+    const double step = 2.0 * std::numbers::pi * 1000.0 / kRate;
+    for (std::size_t f = 0; f < frames; ++f) {
+        input[f] = static_cast<float>(std::sin(step * static_cast<double>(f)) * dbToLinear(-20.0));
+    }
+
+    auto rms = [](const std::vector<float>& mono) {
+        double sumOfSquares = 0.0;
+        for (std::size_t i = mono.size() / 2; i < mono.size(); ++i) {
+            sumOfSquares += static_cast<double>(mono[i]) * mono[i];
+        }
+        return 10.0 * std::log10(sumOfSquares / static_cast<double>(mono.size() - mono.size() / 2));
+    };
+
+    DspParameters params;
+    params.limiter.ceilingDb = -1.0;
+    params.balance = audiolens::balanceToOffset(-50);
+
+    // Passthrough path: untouched sample for sample.
+    {
+        DspParameters passthroughParams = params;
+        passthroughParams.passthrough = true;
+        DspChain chain;
+        chain.setParameters(passthroughParams);
+        chain.prepare(kRate, 1, 512);
+
+        std::vector<float> audio = input;
+        chain.process(audio.data(), frames, 1);
+        CHECK(audio == input);
+    }
+
+    // Full path: the limiter delays it, so the level is what can be compared.
+    {
+        DspChain chain;
+        chain.setParameters(params);
+        chain.prepare(kRate, 1, 512);
+
+        std::vector<float> audio = input;
+        chain.process(audio.data(), frames, 1);
+        CHECK_NEAR(rms(audio), rms(input), 0.1);
+    }
 }

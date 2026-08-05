@@ -129,6 +129,13 @@ private:
     float outputGainLinear_ = 1.0f;
     float sideGainLinear_ = 1.0f;
 
+    /// Left and right trim from the balance control. At least one of the two is
+    /// always 1.0: only the far side moves.
+    std::array<float, 2> balanceGain_{1.0f, 1.0f};
+    /// False when the material is not stereo, or the balance is centred. Lets
+    /// the passthrough path skip the multiply entirely in the common case.
+    bool balanceActive_ = false;
+
     /// Whether the speech bands are currently running on the mid channel.
     /// Tracked separately from the parameter so that a change can reset the
     /// filters: their state would otherwise carry mid samples into the left

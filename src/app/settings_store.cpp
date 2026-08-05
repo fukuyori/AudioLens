@@ -78,6 +78,8 @@ AppSettings SettingsStore::loadSettings() const {
         json[QStringLiteral("activePresetId")].toString(settings.activePresetId);
     settings.outputVolume =
         std::clamp(json[QStringLiteral("outputVolume")].toInt(settings.outputVolume), 0, 100);
+    settings.balance =
+        std::clamp(json[QStringLiteral("balance")].toInt(settings.balance), -50, 50);
     settings.startWithWindows =
         json[QStringLiteral("startWithWindows")].toBool(settings.startWithWindows);
     settings.startMinimized =
@@ -111,6 +113,7 @@ AppSettings SettingsStore::loadSettings() const {
         profile.sliders = profile.sliders.clamped();
         profile.outputVolume =
             std::clamp(entry[QStringLiteral("outputVolume")].toInt(100), 0, 100);
+        profile.balance = std::clamp(entry[QStringLiteral("balance")].toInt(0), -50, 50);
         settings.deviceProfiles.insert(it.key(), profile);
     }
 
@@ -130,6 +133,7 @@ bool SettingsStore::saveSettings(const AppSettings& settings, QString* error) co
     json[QStringLiteral("activePresetId")] = settings.activePresetId;
     json[QStringLiteral("sliders")] = sliders;
     json[QStringLiteral("outputVolume")] = settings.outputVolume;
+    json[QStringLiteral("balance")] = settings.balance;
     json[QStringLiteral("startWithWindows")] = settings.startWithWindows;
     json[QStringLiteral("startMinimized")] = settings.startMinimized;
     json[QStringLiteral("takeOverDefaultDevice")] = settings.takeOverDefaultDevice;
@@ -147,6 +151,7 @@ bool SettingsStore::saveSettings(const AppSettings& settings, QString* error) co
         entry[QStringLiteral("presetId")] = it.value().presetId;
         entry[QStringLiteral("sliders")] = profileSliders;
         entry[QStringLiteral("outputVolume")] = it.value().outputVolume;
+        entry[QStringLiteral("balance")] = it.value().balance;
         profiles[it.key()] = entry;
     }
     json[QStringLiteral("deviceProfiles")] = profiles;

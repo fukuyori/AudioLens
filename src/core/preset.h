@@ -124,6 +124,17 @@ dsp::DspParameters resolveParameters(const Preset& preset, const SliderValues& s
 /// a linear scale badly fails to do.
 double outputVolumeToDb(int volume);
 
+/// Left/right balance as the DSP chain takes it (requirement F-24).
+///
+/// `balance` is the slider position: -50 fully left, 0 centred, +50 fully
+/// right. Returns -1.0 .. +1.0.
+///
+/// Like the master volume this sits outside the preset. A preset says how the
+/// sound should be shaped; balance corrects the listener's ears or a speaker
+/// that sits closer than its pair, and neither of those changes when the user
+/// picks a different preset.
+double balanceToOffset(int balance);
+
 /// Same, using the preset's own slider positions.
 dsp::DspParameters resolveParameters(const Preset& preset);
 

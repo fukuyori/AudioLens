@@ -35,6 +35,11 @@ public:
 protected:
     void closeEvent(QCloseEvent* event) override;
 
+    /// Catches the two gestures that put the balance back to centre. They are
+    /// mouse events on widgets that do not otherwise report them, so a filter
+    /// is the way to reach them without subclassing QSlider and QLabel.
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
 private:
     // --- construction ---
     QWidget* buildPresetSection();
@@ -51,6 +56,7 @@ private:
     void onPresetSelectionChanged();
     void onSliderChanged();
     void onOutputVolumeChanged();
+    void onBalanceChanged();
     void onDeviceChanged();
     void onPowerToggled(bool on);
     void onSaveUserPreset();
@@ -114,6 +120,12 @@ private:
 
     QSlider* volumeSlider_ = nullptr;
     QLabel* volumeValue_ = nullptr;
+
+    QSlider* balanceSlider_ = nullptr;
+    /// Doubles as the readout and the way back to centre, so that the reset is
+    /// one click on something already on screen rather than a control of its
+    /// own competing for width.
+    QPushButton* balanceValue_ = nullptr;
 
     LevelMeter* inputMeter_ = nullptr;
     LevelMeter* outputMeter_ = nullptr;

@@ -65,7 +65,10 @@ public:
     /// folded in here rather than baked into the preset: the preset says how the
     /// sound should be shaped, the master says how loud the result should be,
     /// and changing preset should not change the volume.
-    void applyPreset(const Preset& preset, const SliderValues& sliders, int outputVolume);
+    /// `balance` is the left/right trim, -50 to +50 (requirement F-24), and is
+    /// outside the preset for the same reason the volume is.
+    void applyPreset(const Preset& preset, const SliderValues& sliders, int outputVolume,
+                     int balance);
 
     /// Bypasses the processing without changing the signal path or its latency,
     /// so a listener comparing the two is hearing only the processing.

@@ -31,12 +31,27 @@ public:
     /// calling `acquire()`. Empty if there is none.
     static QString currentDefault();
 
-    /// Makes `deviceId` the default. `previousDeviceId` is what to go back to;
-    /// the caller must already have written it somewhere durable.
-    static bool acquire(const QString& deviceId, const QString& previousDeviceId, QString* error);
+    /// Makes `deviceId` the default.
+    ///
+    /// `restoreDeviceId` is where to leave the default afterwards, and it is the
+    /// app's *output* device rather than whatever was displaced. That is a
+    /// deliberate choice and not merely a convenience: the output device is by
+    /// definition the one the user has been listening on for the whole run, and
+    /// unlike the displaced device it is known to exist and to be audible right
+    /// now. Putting the displaced device back is the more polite behaviour, but
+    /// politeness is worth nothing if the machine ends up silent — and it does
+    /// end up silent whenever the displaced device was itself the cable, or has
+    /// been unplugged since, or never worked in the first place.
+    ///
+    /// `fallbackDeviceId` is the displaced device, used only when the restore
+    /// target cannot be set. The caller must already have written it somewhere
+    /// durable.
+    static bool acquire(const QString& deviceId, const QString& restoreDeviceId,
+                        const QString& fallbackDeviceId, QString* error);
 
-    /// Puts the previous device back. Does nothing if nothing is held, and is
-    /// safe to call repeatedly and from any thread.
+    /// Points the default at the restore device, or at the fallback if that
+    /// fails. Does nothing if nothing is held, and is safe to call repeatedly
+    /// and from any thread.
     static void release();
 
     static bool held();
