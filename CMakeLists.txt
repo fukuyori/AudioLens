@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(AudioLens
-    VERSION 0.1.8
+    VERSION 0.2.0
     DESCRIPTION "Preset-based audio assistance for Windows playback"
     LANGUAGES CXX)
 
@@ -81,3 +81,4 @@ enable_testing()
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
     add_subdirectory(tests)
 endif()
+

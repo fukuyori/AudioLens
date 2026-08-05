@@ -423,50 +423,56 @@ QWidget* MainWindow::buildDeviceSection() {
 }
 
 QWidget* MainWindow::buildFooter() {
+    // One row, and the buttons at their natural size.
+    //
+    // They were 38 px tall and stretched across the whole window, with the A/B
+    // button given twice the width of the switch. That is a lot of chrome for
+    // two controls that are pressed once a day at most: the app starts with
+    // Windows and restores its own state, so the switch is rarely touched, and
+    // the A/B comparison is for tuning a preset rather than for listening.
+    //
+    // Sized to their text and left-aligned, they read as what they are, and the
+    // status — the one thing here that changes while you watch — gets the rest
+    // of the row instead of a line of its own.
     auto* container = new QWidget;
-    auto* layout = new QVBoxLayout(container);
+    auto* layout = new QHBoxLayout(container);
     layout->setContentsMargins(0, 0, 0, 0);
-
-    auto* buttons = new QHBoxLayout;
+    layout->setSpacing(8);
 
     powerButton_ = new QPushButton(QStringLiteral("開始"));
     powerButton_->setCheckable(true);
-    powerButton_->setMinimumHeight(38);
     connect(powerButton_, &QPushButton::toggled, this, &MainWindow::onPowerToggled);
 
     // Press and hold is the natural gesture for an A/B: you hear the difference
     // while the button is down and the processing returns when you let go.
-    compareButton_ = new QPushButton(QStringLiteral("押している間だけ処理前の音"));
-    compareButton_->setMinimumHeight(38);
+    compareButton_ = new QPushButton(QStringLiteral("処理前の音"));
+    compareButton_->setToolTip(QStringLiteral(
+        "押している間だけ補正を外します。経路も遅延も変わらないので、\n"
+        "聞き比べているのは処理の効果だけです。"));
     connect(compareButton_, &QPushButton::pressed, this,
             [this] { controller_.setBypass(true); });
     connect(compareButton_, &QPushButton::released, this,
             [this] { controller_.setBypass(false); });
 
-    buttons->addWidget(powerButton_, 1);
-    buttons->addWidget(compareButton_, 2);
-    layout->addLayout(buttons);
+    layout->addWidget(powerButton_);
+    layout->addWidget(compareButton_);
+    layout->addSpacing(8);
 
-    // The status text and the version share a row: the status is what changes
-    // and gets the room, the version sits quietly at the end of it. Putting it
-    // on a line of its own would give a number that never changes the same
-    // weight as the one thing on this screen that does.
-    auto* statusRow = new QHBoxLayout;
-
+    // Word wrap off, unlike before: on a shared row a wrapping label would
+    // change the footer's height as the text changed, which makes the whole
+    // window twitch every time the latency figure gains a digit.
     statusLabel_ = new QLabel;
-    statusLabel_->setWordWrap(true);
-    statusRow->addWidget(statusLabel_, 1);
+    statusLabel_->setWordWrap(false);
+    layout->addWidget(statusLabel_, 1);
 
     auto* versionLabel = makeHint(QStringLiteral(AUDIOLENS_VERSION));
     versionLabel->setWordWrap(false);
-    versionLabel->setAlignment(Qt::AlignRight | Qt::AlignBottom);
+    versionLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     // Selectable so a version can be copied into a bug report rather than
     // transcribed from the screen.
     versionLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     versionLabel->setToolTip(QStringLiteral("AudioLens %1").arg(AUDIOLENS_VERSION));
-    statusRow->addWidget(versionLabel, 0);
-
-    layout->addLayout(statusRow);
+    layout->addWidget(versionLabel, 0);
 
     return container;
 }
@@ -832,16 +838,7 @@ void MainWindow::onPowerToggled(bool on) {
         releaseDefaultDevice();
     }
 
-    powerButton_->setText(on ? QStringLiteral("停止") : QStringLiteral("開始"));
-    if (trayPowerAction_ != nullptr) {
-        QSignalBlocker blocker(trayPowerAction_);
-        trayPowerAction_->setChecked(on);
-        trayPowerAction_->setText(on ? QStringLiteral("停止") : QStringLiteral("開始"));
-    }
-    if (tray_ != nullptr) {
-        tray_->setIcon(makeApplicationIcon(on));
-    }
-    setWindowIcon(makeApplicationIcon(on));
+    syncPowerUi(on);
 
     settings_.processingEnabled = on;
     persistSettings();
@@ -1075,21 +1072,33 @@ void MainWindow::updateStatusLabel(const EngineStatus& status) {
         return;
     }
 
-    // The engine can stop for good, for instance when a device is unplugged
-    // and nothing usable replaces it.
-    if (!status.running && powerButton_->isChecked()) {
-        QSignalBlocker blocker(powerButton_);
-        powerButton_->setChecked(false);
-        powerButton_->setText(QStringLiteral("開始"));
-        if (trayPowerAction_ != nullptr) {
-            QSignalBlocker trayBlocker(trayPowerAction_);
-            trayPowerAction_->setChecked(false);
-            trayPowerAction_->setText(QStringLiteral("開始"));
-        }
-        if (tray_ != nullptr) {
-            tray_->setIcon(makeApplicationIcon(false));
-        }
+    // Both directions, not just the stopping one. The engine can stop for good
+    // — a device unplugged with nothing usable to replace it — and it can also
+    // come back on its own long afterwards, once whatever was missing is
+    // plugged in again. A switch that only ever moves to 開始 would leave the
+    // second case showing the app as stopped while it was in fact running.
+    if (status.running != powerButton_->isChecked()) {
+        syncPowerUi(status.running);
     }
+}
+
+void MainWindow::syncPowerUi(bool on) {
+    // Signals blocked throughout: this reflects a decision already taken, and
+    // letting it run onPowerToggled would start or stop the engine a second
+    // time on the strength of the display catching up.
+    QSignalBlocker buttonBlocker(powerButton_);
+    powerButton_->setChecked(on);
+    powerButton_->setText(on ? QStringLiteral("停止") : QStringLiteral("開始"));
+
+    if (trayPowerAction_ != nullptr) {
+        QSignalBlocker trayBlocker(trayPowerAction_);
+        trayPowerAction_->setChecked(on);
+        trayPowerAction_->setText(on ? QStringLiteral("停止") : QStringLiteral("開始"));
+    }
+    if (tray_ != nullptr) {
+        tray_->setIcon(makeApplicationIcon(on));
+    }
+    setWindowIcon(makeApplicationIcon(on));
 }
 
 void MainWindow::persistSettings() {

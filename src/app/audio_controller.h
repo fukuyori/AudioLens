@@ -77,6 +77,11 @@ public:
     void applyPreset(const Preset& preset, const SliderValues& sliders, int outputVolume,
                      int balance);
 
+    /// Writes one line to the log when the dropout counters have moved and then
+    /// settled. Separating underruns from overruns is the point: the status
+    /// line adds them together, and the two call for opposite fixes.
+    void reportDropouts();
+
     /// Bypasses the processing without changing the signal path or its latency,
     /// so a listener comparing the two is hearing only the processing.
     void setBypass(bool bypass);
@@ -100,9 +105,10 @@ private:
     /// Tries to restart after a device went away. Returns true once running.
     bool attemptRecovery();
 
-    /// Picks a replacement for `preferredId` when that device is gone: the
-    /// system default, if it is not the other end of the loop.
-    QString resolveUsableDevice(const QString& preferredId, const QString& avoidId) const;
+    /// Returns `preferredId` if that device is currently present, and nothing
+    /// otherwise. Deliberately does not substitute: see the note on the
+    /// definition for what substituting did on a real unplug.
+    QString resolveUsableDevice(const QString& preferredId) const;
 
     dsp::DspChain chain_;
     AudioEngine engine_;
@@ -120,6 +126,12 @@ private:
     /// happening, not a fresh one, so the retry budget must not be handed back.
     int pollsSinceStart_ = 0;
 
+    /// Whether the user has the switch on, as opposed to whether audio is
+    /// currently flowing. Distinct from `recovering_`, which is only true while
+    /// an attempt is in progress: this stays true across a failed recovery, and
+    /// is what says a device appearing later is worth acting on.
+    bool userWantsRunning_ = false;
+
     /// Set when the engine stopped on its own and the user had it switched on,
     /// meaning it should come back without being asked.
     bool recovering_ = false;
@@ -130,6 +142,13 @@ private:
     /// device that comes back should be returned to.
     QString desiredCaptureId_;
     QString desiredRenderId_;
+
+    /// Dropout counts as of the last line written to the log, so that only the
+    /// change is reported and a quiet run stays quiet.
+    quint64 loggedUnderruns_ = 0;
+    quint64 loggedOverruns_ = 0;
+    quint64 loggedResyncs_ = 0;
+    int dropoutQuietPolls_ = 0;
 };
 
 }  // namespace audiolens::app

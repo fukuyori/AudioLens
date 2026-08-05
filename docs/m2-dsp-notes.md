@@ -146,7 +146,7 @@ BS.1770-4 は K 特性の係数を 48 kHz でしか定義していないため�
 ## 7. 使い方
 
 ```powershell
-.\build.ps1
+.\scripts\build.ps1
 
 $bin = ".\build\release\bin"
 

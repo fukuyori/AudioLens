@@ -213,16 +213,16 @@ UI Automation でウィンドウを操作し、`PrintWindow` で画面を取得�
 
 ```powershell
 # Qt は自動検出される(C:\Qt などから msvc2022_64 キットを探す)
-.\build.ps1
+.\scripts\build.ps1
 
 # 明示指定 / GUI を作らない
-.\build.ps1 -QtDir C:\Qt\6.11.1\msvc2022_64
-.\build.ps1 -NoGui
+.\scripts\build.ps1 -QtDir C:\Qt\6.11.1\msvc2022_64
+.\scripts\build.ps1 -NoGui
 
 .\build\release\bin\AudioLens.exe
 ```
 
-`build.ps1` はビルド後に `windeployqt` を実行するので、Qt を PATH に通さなくても起動する。
+`scripts\build.ps1` はビルド後に `windeployqt` を実行するので、Qt を PATH に通さなくても起動する。
 
 コマンドライン引数:
 

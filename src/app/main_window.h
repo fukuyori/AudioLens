@@ -84,6 +84,11 @@ private:
 
     void applyCurrentSettings();
     void updateStatusLabel(const EngineStatus& status);
+
+    /// Puts the switch, the tray entry and the icons into the on or off state
+    /// without acting on it. Used both when the user throws the switch and when
+    /// the engine stops or restarts on its own.
+    void syncPowerUi(bool on);
     void updateSliderLabels();
     void updatePresetActions();
     void persistSettings();

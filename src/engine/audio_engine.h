@@ -57,8 +57,21 @@ struct EngineStats {
     std::uint64_t renderedFrames = 0;
     std::uint64_t underruns = 0;        ///< Render callbacks that found the ring dry.
     std::uint64_t overruns = 0;         ///< Capture packets that found the ring full.
+
+    /// Runs of consecutive dropped packets. Packets dropped back to back leave
+    /// one gap in the output, so this — not `overruns` — is the count of
+    /// audible discontinuities. `overruns` says how much was lost; this says
+    /// how many times the listener could hear it.
+    std::uint64_t overrunBursts = 0;
     std::uint64_t discontinuities = 0;  ///< WASAPI reported a capture gap.
     std::uint64_t silenceFills = 0;     ///< Idle-loopback silence pushed into the ring.
+
+    /// Times the ring was dropped back to target in one step because it had
+    /// come within a packet of overflowing, and how much was dropped. This is
+    /// what a resume from sleep looks like: not drift, but a backlog arriving
+    /// at once. Each resync stands in for the dozens of overruns it prevents.
+    std::uint64_t resyncs = 0;
+    std::uint64_t resyncDroppedFrames = 0;
 
     /// The two endpoints' rates. They no longer have to match.
     std::uint32_t captureSampleRate = 0;
@@ -196,6 +209,9 @@ private:
     std::atomic<std::uint64_t> overruns_{0};
     std::atomic<std::uint64_t> discontinuities_{0};
     std::atomic<std::uint64_t> silenceFills_{0};
+    std::atomic<std::uint64_t> overrunBursts_{0};
+    std::atomic<std::uint64_t> resyncs_{0};
+    std::atomic<std::uint64_t> resyncDroppedFrames_{0};
     std::atomic<double> driftPpm_{0.0};
 
     std::atomic<std::uint32_t> lastRenderPadding_{0};

@@ -101,7 +101,7 @@ WASAPI が確保したバッファは両エンドポイントとも 1056 フレ�
 実行:
 
 ```powershell
-.\build.ps1
+.\scripts\build.ps1
 .\build\release\bin\audiolens_tests.exe
 ```
 
@@ -120,8 +120,8 @@ WASAPI が確保したバッファは両エンドポイントとも 1056 フレ�
 
 ```powershell
 # ビルド
-.\build.ps1                      # RelWithDebInfo
-.\build.ps1 -Preset debug
+.\scripts\build.ps1                      # RelWithDebInfo
+.\scripts\build.ps1 -Preset debug
 
 # デバイス一覧
 .\build\release\bin\audiolens_passthrough.exe --list

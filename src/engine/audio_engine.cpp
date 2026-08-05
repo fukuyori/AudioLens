@@ -321,6 +321,10 @@ void AudioEngine::captureLoop() {
     const int idleWakesBeforeSilence = captureIdleWakes_;
     int idleWakes = 0;
 
+    /// True while packets are being dropped for want of room, so that a run of
+    /// them is counted once. Thread-local to the capture loop by construction.
+    bool dropping = false;
+
     while (!stopRequested_.load(std::memory_order_acquire)) {
         const DWORD wait = ::WaitForSingleObject(capture_.eventHandle(), captureWaitMs_);
         if (stopRequested_.load(std::memory_order_acquire)) {
@@ -379,11 +383,38 @@ void AudioEngine::captureLoop() {
                     processor_->process(captureScratch_.data(), usable, channels_);
                 }
 
-                const std::size_t written = ring_->write(captureScratch_.data(), usable);
-                if (written < usable) {
+                // All of the packet or none of it.
+                //
+                // A partial write splices the packet down the middle, and a
+                // backlog arriving after a resume produces a run of them:
+                // fifteen were measured across one resume, which is fifteen
+                // clicks about a second apart. Dropping whole packets while
+                // there is no room makes the same run one contiguous gap, and a
+                // gap has two edges rather than thirty.
+                //
+                // The render side's resync handles the same event from the
+                // other end and would make this unnecessary if it always got to
+                // run first — but on resume the capture thread is scheduled
+                // ahead of it and empties its backlog before the render thread
+                // sees anything at all. The producer has to be able to defend
+                // itself.
+                if (ring_->availableToWrite() >= usable) {
+                    const std::size_t written = ring_->write(captureScratch_.data(), usable);
+                    capturedFrames_.fetch_add(written, std::memory_order_relaxed);
+                    dropping = false;
+                } else {
                     overruns_.fetch_add(1, std::memory_order_relaxed);
+                    // Packets dropped back to back form one gap in the output,
+                    // not one per packet. Counting the runs rather than the
+                    // members is the difference between "one discontinuity" and
+                    // "a hundred", and only the first number says what a
+                    // listener hears. The packet count stays as the measure of
+                    // how much audio was lost; this is the measure of how often.
+                    if (!dropping) {
+                        dropping = true;
+                        overrunBursts_.fetch_add(1, std::memory_order_relaxed);
+                    }
                 }
-                capturedFrames_.fetch_add(written, std::memory_order_relaxed);
                 gotAudio = true;
             }
 
@@ -490,6 +521,53 @@ void AudioEngine::renderLoop() {
         // The fill is smoothed first. Reacting to the raw value would modulate
         // the ratio with every scheduling hiccup, which is audible as warble on
         // sustained tones — the very thing this scheme exists to avoid.
+        // --- resynchronise after a step ---
+        //
+        // Resuming from sleep is not drift, it is a step. The capture side comes
+        // back with a backlog and empties it faster than the render side can
+        // take it, and the ring goes from target to full. Measured across a real
+        // resume: overrun 80, underrun 0, fill pinned at the capacity of 132 ms.
+        //
+        // Every one of those eighty overruns discarded a capture packet on its
+        // own, and every one of those is a splice — eighty clicks over about a
+        // second. Dropping the backlog once, before the ring is full enough to
+        // start refusing packets, turns all of it into a single splice.
+        //
+        // The drift loop cannot do this job. Its crossover period is seven
+        // minutes because the thing it exists to correct is a hundred parts per
+        // million between two crystals; a step is not that, and asking a loop
+        // tuned for one to fix the other is how this file's §6.3.1 happened.
+        //
+        // Threshold: one capture period short of the capacity, i.e. the last
+        // moment at which the next packet would still fit. Normal running peaks
+        // around 86 ms against a 132 ms ring, so there is a comfortable margin
+        // below this and it cannot fire on ordinary ripple.
+        //
+        // What gets dropped is audio captured while the machine was asleep. It
+        // is stale by definition: playing it out would mean hearing, late, the
+        // sound of a machine that was not awake.
+        // Recorded before the resync below, not after. Taking it afterwards
+        // hid the very peak that triggered the resync: one resume reported a
+        // high-water mark of 83 ms when the ring had in fact touched its 132 ms
+        // capacity moments earlier. The mark exists to say how close the
+        // configuration came to the edge, and a mark that is reset by the
+        // mechanism guarding the edge answers a different question.
+        if (const std::size_t peek = ring_->availableToRead(); peek > ringFillMax_) {
+            ringFillMax_ = peek;
+            ringFillMaxFrames_.store(static_cast<std::uint32_t>(peek), std::memory_order_relaxed);
+        }
+
+        if (ring_->availableToRead() + capturePeriodFrames_ >= ring_->capacityFrames()) {
+            const std::size_t excess = ring_->availableToRead() - targetFillFrames_;
+            const std::size_t dropped = ring_->discard(excess);
+            resyncs_.fetch_add(1, std::memory_order_relaxed);
+            resyncDroppedFrames_.fetch_add(dropped, std::memory_order_relaxed);
+            // The smoothed fill has a seven-second memory and still holds the
+            // pre-drop value. Left alone it would drive the trim hard the wrong
+            // way for a minute after the ring was already back where it belongs.
+            smoothedFill_ = static_cast<double>(targetFillFrames_);
+        }
+
         const std::size_t fillFrames = ring_->availableToRead();
         const auto rawFill = static_cast<double>(fillFrames);
         smoothedFill_ += kFillSmoothing * (rawFill - smoothedFill_);
@@ -585,6 +663,9 @@ EngineStats AudioEngine::stats() const {
     s.overruns = overruns_.load(std::memory_order_relaxed);
     s.discontinuities = discontinuities_.load(std::memory_order_relaxed);
     s.silenceFills = silenceFills_.load(std::memory_order_relaxed);
+    s.overrunBursts = overrunBursts_.load(std::memory_order_relaxed);
+    s.resyncs = resyncs_.load(std::memory_order_relaxed);
+    s.resyncDroppedFrames = resyncDroppedFrames_.load(std::memory_order_relaxed);
     s.captureSampleRate = sampleRate_;
     s.renderSampleRate = renderSampleRate_;
     s.driftPpm = driftPpm_.load(std::memory_order_relaxed);

@@ -1,128 +1,217 @@
-# AudioLens 0.1.8
+# AudioLens 0.2.0
 
-PC で再生される音声を、用途に合わせて聞き取りやすく調整するプリセット型オーディオ補助アプリ(Windows)。
+*[日本語](README.ja.md)*
 
-- リポジトリ: <https://github.com/fukuyori/AudioLens>
-- バージョンは `CMakeLists.txt` の `project(... VERSION ...)` が唯一の出所で、そこから
-  `AUDIOLENS_VERSION` としてコードに渡る。トレイメニューと `AudioLens.exe --version` で確認できる。
+A preset-based audio assistance app for Windows that adjusts whatever the PC is
+playing so it is easier to hear.
 
-「会話」「講義」「映画」「深夜」「ゲーム」に加え、「ロック」「ジャズ」「クラシック」「アンビエント」のプリセットを選ぶだけで、低音の濁りを抑え、人の声に必要な周波数帯を強調し、音量差を自動的に整える。専門知識は不要で、「低音」「声の明瞭さ」「音量差」の 3 項目で効果の強さを調整でき、出力音量と左右バランスも同じ場所で動かせる。
+- Repository: <https://github.com/fukuyori/AudioLens>
+- The version lives in `project(... VERSION ...)` in `CMakeLists.txt` and nowhere
+  else. It reaches the code as `AUDIOLENS_VERSION`, and is visible in the tray
+  menu and from `AudioLens.exe --version`.
 
-## ステータス
+Pick a preset — Conversation, Lecture, Film, Late night, Game, plus Rock, Jazz,
+Classical and Ambient — and it suppresses muddy bass, lifts the frequencies
+speech needs, and evens out differences in loudness. No specialist knowledge is
+required: three amounts (Bass, Speech clarity, Loudness range) control the
+strength of the effect, and the output volume and left/right balance sit in the
+same place.
 
-**M3(GUI)実装済み。** Qt 6 の GUI からプリセットを選び、システム音声を補正して聞ける。取り込み元には VB-Cable などの仮想オーディオデバイスを別途用意する。
+## Status
 
-| マイルストーン | 状態 |
+**M3 (GUI) implemented.** Presets can be chosen from the Qt 6 GUI and the system
+audio is corrected as you listen. A virtual audio device such as VB-Cable has to
+be installed separately to serve as the capture source.
+
+| Milestone | State |
 |---|---|
-| M1 エンジン検証 | 実装済み・実測済み |
-| M2 DSP コア | 実装済み・実測済み |
-| M3 GUI・プリセット保存 | 実装済み・実機確認済み |
-| M3.5 堅牢化 (N-03) | 実装済み・実測確認済み(デバイス消失の分岐のみ未検証) |
-| N-04 既定デバイスの復旧 | 実装済み・実測確認済み |
-| M4 仮想デバイスドライバ | **中止。**ビルド成功までの記録([driver/README.md](driver/README.md)) |
-| M5 仕上げ | 未着手 |
+| M1 engine | Implemented, measured |
+| M2 DSP core | Implemented, measured |
+| M3 GUI and preset storage | Implemented, confirmed on hardware |
+| M3.5 robustness (N-03) | Implemented, **every path measured** (including resume from sleep and device loss) |
+| N-04 default device recovery | Implemented, measured |
+| M4 virtual device driver | **Cancelled.** Record of the work up to a successful build: [driver/README.md](driver/README.md) |
+| M5 finishing | Not started |
 
-**個人利用のみとし、自作カーネルドライバは使いません**(2026-08-04 決定)。カーネルモードのバグはブルースクリーンや起動不能を招くのに対し、仮想オーディオデバイスは音の入口にすぎません。広く配布され Microsoft の署名を受けた既存ドライバのほうが安全なので、取り込み元には VB-Cable 等を使います。経緯は [docs/requirements.md](docs/requirements.md) §4.1。
+**Personal use only, and no self-written kernel driver** (decided 2026-08-04). A
+bug in kernel mode means a blue screen or a machine that will not boot, whereas
+a virtual audio device is only the way sound gets in. A widely distributed driver
+carrying a Microsoft signature is the safer choice, so VB-Cable and the like are
+used as the capture source. The reasoning is in
+[docs/requirements.md](docs/requirements.md) section 4.1.
 
-映画プリセットで、音量差(EBU R128 の LRA)が 17.99 → 13.13 LU に縮小することを実測済み。音楽プリセットは逆に音量差を変えない(17.99 → 17.99 LU)ことを実測済みで、これは意図した動作 — 録音のダイナミクスは編曲そのものなので触らない。リアルタイム時の CPU 使用率は 1 コアあたり 0.55%、追加遅延は 2 ms。
+Measured: the Film preset narrows the loudness range (EBU R128 LRA) from 17.99 to
+13.13 LU. The music presets deliberately leave it alone (17.99 to 17.99 LU) —
+the dynamics of a recording are the arrangement, so they are not touched. In
+real time the CPU cost is 0.55 % of one core and the added latency is 2 ms.
 
-## ビルド
+## Building
 
-Visual Studio(C++ ワークロード)があれば、CMake と Ninja は同梱のものを使うため追加インストールは不要。GUI には Qt 6 (msvc2022_64 キット) が要る。`C:\Qt` などから自動検出され、見つからなければ GUI だけをスキップして残りをビルドする。
+Visual Studio with the C++ workload is enough; CMake and Ninja come with it, so
+nothing else has to be installed. The GUI needs Qt 6 (the msvc2022_64 kit). It is
+detected automatically under `C:\Qt` and similar, and if no kit is found the GUI
+is skipped and everything else still builds.
 
 ```powershell
-.\build.ps1                  # RelWithDebInfo -> build\release\bin
-.\build.ps1 -Preset debug    # Debug         -> build\debug\bin
-.\build.ps1 -Clean           # 構成からやり直す
-.\build.ps1 -QtDir C:\Qt\6.11.1\msvc2022_64   # Qt を明示指定
-.\build.ps1 -NoGui           # GUI を作らない
+.\scripts\build.ps1                  # RelWithDebInfo -> build\release\bin
+.\scripts\build.ps1 -Preset debug    # Debug          -> build\debug\bin
+.\scripts\build.ps1 -Clean           # reconfigure from scratch
+.\scripts\build.ps1 -QtDir C:\Qt\6.11.1\msvc2022_64   # point at a Qt kit
+.\scripts\build.ps1 -NoGui           # skip the GUI
 ```
 
-## 動かす
+The scripts under `scripts\` are ASCII only. They are run by both PowerShell 7
+and Windows PowerShell 5.1, and the two disagree about the encoding of a file
+that carries no byte order mark, which turns non-ASCII text into a parse error
+rather than a garbled message.
+
+## Building an installer
+
+Needs [Inno Setup 6](https://jrsoftware.org/isdl.php).
+
+```powershell
+.\scripts\build.ps1            # build first
+.\scripts\make_installer.ps1   # then package it into dist\
+```
+
+Produces `dist\AudioLens-<version>-setup.exe`, around 34 MB.
+
+- **It does not build.** It packages. If there is no build output it stops and
+  says how to produce one. Building is `scripts\build.ps1`'s job, and a
+  packaging step that quietly builds leaves "which script do I build with?"
+  without an answer.
+- **The version comes from `CMakeLists.txt`**, and is checked against the
+  version the built binaries report. They have to agree, because bumping the
+  source and forgetting to rebuild otherwise produces an installer with stale
+  contents under a new name.
+- **No administrator rights.** It installs under
+  `%LOCALAPPDATA%\Programs\AudioLens` by default. Choosing Program Files
+  elevates.
+- **`.pdb` and `.ilk` are left out.** Together they are 187 MB, seven tenths of
+  the build output.
+- **The Visual C++ runtime** is installed only if it is missing.
+- **A missing VB-Cable is reported** but does not stop the install; it can be
+  added afterwards.
+- **"Start with Windows" is not set by the installer.** The app manages that
+  checkbox itself, and two writers of the same registry value disagree sooner or
+  later.
+
+Uninstalling asks whether to remove settings, presets and the log
+(`%APPDATA%\AudioLens`).
+
+## Running it
 
 ```powershell
 $bin = ".\build\release\bin"
 
-# GUI(通常はこちら)
+# The GUI, which is the normal way in
 & $bin\AudioLens.exe
 
-# --- 以下は検証・測定用の CLI ---
+# --- everything below is for measurement and diagnosis ---
 
-# デバイス一覧とプリセット一覧
+# List devices and presets
 & $bin\audiolens_passthrough.exe --list
 & $bin\audiolens_process.exe --list-presets
 
-# システム音声をプリセットで補正して別デバイスへ流す
-#   --capture には「再生デバイス」を指定する(ループバックで取り込む)
-#   --ab 8 を付けると 8 秒ごとに補正のオン/オフが切り替わり、効果を比較できる
-& $bin\audiolens_passthrough.exe --capture "CABLE Input" --render "ヘッドホン" --preset movie --ab 8
+# Correct the system audio with a preset and send it to another device.
+#   --capture takes a *render* device, which is tapped via loopback
+#   --ab 8 toggles the processing every 8 seconds so the effect can be compared
+& $bin\audiolens_passthrough.exe --capture "CABLE Input" --render "Headphones" --preset movie --ab 8
 
-# --takeover を付けると、実行中だけ取り込み元をシステム既定の出力にし、終了時に戻す
-& $bin\audiolens_passthrough.exe --capture "CABLE Input" --render "ヘッドホン" --takeover
+# --takeover makes the capture device the system default while it runs
+& $bin\audiolens_passthrough.exe --capture "CABLE Input" --render "Headphones" --takeover
 
-# 既定の出力が仮想ケーブルのまま取り残されて音が出なくなったときの復旧
-& $bin\audiolens_passthrough.exe --set-default "ヘッドホン"
+# Recovery when the default output was left on the virtual cable and there is no sound
+& $bin\audiolens_passthrough.exe --set-default "Headphones"
 
-# デバイス変更への追従(N-03)を試す。サンプルレートを一時的に変えて元に戻す
+# Exercise following a device change (N-03) by changing a sample rate and putting it back
 & $bin\audiolens_passthrough.exe --invalidate "CABLE Input"
 
-# リング充填とリサンプラーのトリムを 20 ms ごとに CSV へ記録する。
-#   ドリフト制御の挙動を時間分解して見るための診断。5 秒ごとの表示では
-#   10 秒より速い成分がすべて折り返すので、この分解能でないと判断を誤る
-& $bin\audiolens_passthrough.exe --capture "CABLE Input" --render "ヘッドホン" --fill-log fill.csv
+# Log the ring fill and the resampler trim every 20 ms to a CSV.
+#   A diagnostic for watching the drift control in time. The five-second status
+#   line aliases everything faster than ten seconds, so this resolution is what
+#   the difference between a real effect and an artefact depends on.
+& $bin\audiolens_passthrough.exe --capture "CABLE Input" --render "Headphones" --fill-log fill.csv
 
-# WAV に対してオフラインで処理し、効果を数値で確認する
+# Process a WAV offline and measure the effect
 & $bin\audiolens_process.exe --input in.wav --output out.wav --preset movie
 
-# 段ごとの寄与を切り分ける(ミッド/サイド・遅いレベリング・ディエッサーを個別に外す)
+# Separate the contribution of each stage (mid/side, slow levelling, de-esser)
 & $bin\audiolens_process.exe --input in.wav --output out.wav --preset movie --no-midside
 & $bin\audiolens_process.exe --input in.wav --output out.wav --preset movie --no-autogain
 & $bin\audiolens_process.exe --input in.wav --output out.wav --preset movie --no-deesser
 
-# 単体テスト(ハードウェア不要、111 件)
+# Unit tests (no hardware required, 111 of them)
 & $bin\audiolens_tests.exe
 
-# プロセスループバック検証(案 E の判定に使った。結論は不成立)
+# Process loopback spike (used to settle option E; the answer was no)
 & $bin\audiolens_procloop.exe --list
 & $bin\audiolens_procloop.exe --pid <PID> --auto-mute 6 --duration 14
 ```
 
-VB-Cable などの仮想オーディオデバイスを手動でインストールし、それをシステム既定の出力にしたうえで `--capture` に指定する。自作ドライバ(M4)は凍結したため、この構成が最終形になる。
+Install a virtual audio device such as VB-Cable by hand, make it the system
+default output, and name it to `--capture`. The self-written driver (M4) is
+frozen, so this arrangement is the final one.
 
-## ライセンス
+## Investigating a fault
 
-**Apache License 2.0**([LICENSE](LICENSE))。ただし `driver/` は例外で、**Microsoft Public License (MS-PL)** である。
+The GUI writes to `%APPDATA%\AudioLens\audiolens.log`, rotating one generation at
+a megabyte. **A fault that did not happen in front of you can only be found
+here** — a windowed process has nowhere to send stderr, so previously nothing
+was kept at all.
 
-`driver/` は Microsoft の [Windows-driver-samples](https://github.com/microsoft/Windows-driver-samples) の `audio/simpleaudiosample` に由来する。MS-PL 3(D) はソース形式での配布を MS-PL 下に置くことを求めるため、この部分だけ Apache 2.0 の許諾から外れる。各ファイルの Microsoft 著作権表示は保持すること。詳細は [NOTICE](NOTICE) と [driver/LICENSE-MS-PL.txt](driver/LICENSE-MS-PL.txt)。
+```powershell
+Get-Content "$env:APPDATA\AudioLens\audiolens.log" -Tail 40
+```
 
-## ドキュメント
+Unplugging a device, changing the default device and resuming from sleep all
+appear here.
 
-| ドキュメント | 内容 |
+## Licence
+
+**Apache License 2.0** ([LICENSE](LICENSE)), except for `driver/`, which is
+**Microsoft Public License (MS-PL)**.
+
+`driver/` derives from `audio/simpleaudiosample` in Microsoft's
+[Windows-driver-samples](https://github.com/microsoft/Windows-driver-samples).
+MS-PL 3(D) requires distribution in source form to remain under MS-PL, so that
+part alone falls outside the Apache 2.0 grant. Keep the Microsoft copyright
+notices in each file. See [NOTICE](NOTICE) and
+[driver/LICENSE-MS-PL.txt](driver/LICENSE-MS-PL.txt).
+
+## Documentation
+
+**The documents below are in Japanese.** They are working notes — what was
+measured, what was got wrong and what the numbers were — and they are written in
+the language they were thought in. This README is the English entry point.
+
+| Document | Contents |
 |---|---|
-| [docs/requirements.md](docs/requirements.md) | 要件定義書(機能要件・非機能要件・成功基準) |
-| [docs/architecture.md](docs/architecture.md) | アーキテクチャ設計書(方式選定・DSP 設計・ロードマップ) |
-| [docs/m1-engine-notes.md](docs/m1-engine-notes.md) | M1 実装メモ(ドリフト補正・遅延実測・既知の制限) |
-| [docs/m2-dsp-notes.md](docs/m2-dsp-notes.md) | M2 実装メモ(DSP 設計・プリセット効果の実測・検出した不具合) |
-| [docs/m3-gui-notes.md](docs/m3-gui-notes.md) | M3 実装メモ(Qt 採用理由・画面構成・設定の保存・検出した不具合) |
-| [docs/m3.5-robustness-notes.md](docs/m3.5-robustness-notes.md) | M3.5 実装メモ(リサンプラー・ドリフト制御・デバイス変更への追従) |
-| [driver/README.md](driver/README.md) | M4 仮想デバイスドライバ(ライセンス・ビルド前提・テスト署名・公式配布までの道筋) |
+| [docs/requirements.md](docs/requirements.md) | Requirements (functional, non-functional, acceptance criteria) |
+| [docs/architecture.md](docs/architecture.md) | Architecture (approach, DSP design, roadmap) |
+| [docs/m1-engine-notes.md](docs/m1-engine-notes.md) | M1 notes (drift correction, measured latency, known limits) |
+| [docs/m2-dsp-notes.md](docs/m2-dsp-notes.md) | M2 notes (DSP design, measured preset effects, defects found) |
+| [docs/m3-gui-notes.md](docs/m3-gui-notes.md) | M3 notes (why Qt, screen layout, settings storage, defects found) |
+| [docs/m3.5-robustness-notes.md](docs/m3.5-robustness-notes.md) | M3.5 notes (resampler, drift control, following device changes) |
+| [driver/README.md](driver/README.md) | M4 virtual device driver (licence, build prerequisites, test signing, the road to official distribution) |
 
-## リポジトリ構成
+## Repository layout
 
 ```
-src/app/               Qt 6 の GUI(メイン画面、トレイ常駐、設定の保存)
-src/common/            ログ、COM/ハンドルの RAII ラッパー、denormal 対策
-src/engine/            WASAPI キャプチャ/再生、リングバッファ、形式変換
-src/dsp/               フィルタ、コンプレッサー、リミッター、ミッド/サイド、
-                       ディエッサー、遅いレベリング、DSP チェーン
-src/core/              プリセットとスライダーのマッピング
-src/analysis/          ラウドネス測定 (ITU-R BS.1770-4 / EBU R128)
-src/audiofile/         WAV 入出力
-src/tools/passthrough/ 取り込み → 補正 → 再生の CLI
-src/tools/process/     WAV のオフライン処理と効果測定 CLI
-src/tools/tone/        信号発生 CLI(デバイス出力 / WAV 書き出し)
-src/tools/procloop/    プロセスループバック検証 CLI(案 E の判定用)
-tests/                 オフライン単体テスト
-scripts/               連続稼働テスト
-docs/                  設計ドキュメント
+src/app/               Qt 6 GUI (main window, tray, settings storage)
+src/common/            logging, COM/handle RAII wrappers, denormal handling
+src/engine/            WASAPI capture and render, ring buffer, format conversion
+src/dsp/               filters, compressor, limiter, mid/side, de-esser,
+                       slow levelling, the DSP chain
+src/core/              presets and the slider mapping
+src/analysis/          loudness measurement (ITU-R BS.1770-4 / EBU R128)
+src/audiofile/         WAV input and output
+src/tools/passthrough/ capture -> correct -> render CLI
+src/tools/process/     offline WAV processing and measurement CLI
+src/tools/tone/        signal generator CLI (to a device or a WAV)
+src/tools/procloop/    process loopback spike CLI (used to settle option E)
+tests/                 offline unit tests
+scripts/               build, installer, soak and recovery tests
+installer/             Inno Setup script
+docs/                  design documents
 ```

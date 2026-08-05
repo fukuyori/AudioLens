@@ -21,7 +21,7 @@ $bin = Join-Path (Split-Path $PSScriptRoot -Parent) "build\$Preset\bin"
 
 foreach ($exe in 'audiolens_passthrough.exe', 'audiolens_tone.exe') {
     if (-not (Test-Path (Join-Path $bin $exe))) {
-        throw "$exe が見つかりません。先に .\build.ps1 を実行してください。"
+        throw "$exe not found. Run .\scripts\build.ps1 first."
     }
 }
 
@@ -33,8 +33,8 @@ $tone = Start-Process -FilePath (Join-Path $bin 'audiolens_tone.exe') `
                   '--level', $ToneLevelDb, '--duration', ($Seconds + 15) `
     -PassThru -WindowStyle Hidden
 
-Write-Host "トーン: $ToneFreqHz Hz / $ToneLevelDb dBFS -> デバイス $ToneDevice (PID $($tone.Id))"
-Write-Host "パススルー: デバイス $Capture -> $Render / $Seconds 秒"
+Write-Host "Tone:        $ToneFreqHz Hz / $ToneLevelDb dBFS -> device $ToneDevice (PID $($tone.Id))"
+Write-Host "Passthrough: device $Capture -> $Render / $Seconds s"
 Write-Host ""
 
 try {

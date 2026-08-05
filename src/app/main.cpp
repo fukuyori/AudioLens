@@ -4,7 +4,9 @@
 #include "common/log.h"
 
 #include <QApplication>
+#include <QDir>
 #include <QMessageBox>
+#include <QStandardPaths>
 #include <QStringList>
 
 int main(int argc, char** argv) {
@@ -47,6 +49,18 @@ int main(int argc, char** argv) {
     if (verbose) {
         audiolens::setLogLevel(audiolens::LogLevel::Debug);
     }
+
+    // Beside the settings, which is where a user already knows to look, and
+    // opened before the window so that a failure during startup is recorded
+    // too. A windowed process has no console, so without this every diagnostic
+    // the app produces is discarded — including the ones from a fault that
+    // happened overnight, which are the only ones nobody can watch happen.
+    const QString dataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    if (!dataDir.isEmpty() && QDir().mkpath(dataDir)) {
+        const QString logPath = QDir(dataDir).filePath(QStringLiteral("audiolens.log"));
+        audiolens::setLogFile(logPath.toStdString());
+    }
+    AL_INFO("AudioLens {} 起動", AUDIOLENS_VERSION);
 
     audiolens::app::MainWindow window;
     if (!startMinimized) {

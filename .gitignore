@@ -1,5 +1,10 @@
 build/
 out/
+# make_installer.ps1 の出力。34 MB のビルド生成物であり、ソースから作り直せる。
+dist/
+
+# コード署名は手元だけの作業なので追跡しない。
+scripts/sign.ps1
 .vs/
 .vscode/
 CMakeUserPresets.json

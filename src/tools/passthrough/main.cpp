@@ -509,10 +509,15 @@ int main(int argc, char** argv) {
     std::printf("  再生          : %llu フレーム\n",
                 static_cast<unsigned long long>(final.renderedFrames));
     std::printf("  underrun      : %llu\n", static_cast<unsigned long long>(final.underruns));
-    std::printf("  overrun       : %llu\n", static_cast<unsigned long long>(final.overruns));
+    std::printf("  overrun       : %llu (空白 %llu 箇所)\n",
+                static_cast<unsigned long long>(final.overruns),
+                static_cast<unsigned long long>(final.overrunBursts));
     std::printf("  不連続        : %llu\n", static_cast<unsigned long long>(final.discontinuities));
     std::printf("  無音補填      : %llu フレーム\n",
                 static_cast<unsigned long long>(final.silenceFills));
+    std::printf("  再同期        : %llu 回 (破棄 %llu フレーム)\n",
+                static_cast<unsigned long long>(final.resyncs),
+                static_cast<unsigned long long>(final.resyncDroppedFrames));
     std::printf("  推定遅延      : %.1f ms\n", final.estimatedLatencyMs());
     // The margin, stated plainly. An overrun is the fill reaching capacity and
     // an underrun is it reaching zero, so how close it came to either is the

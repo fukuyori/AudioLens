@@ -21,15 +21,36 @@ constexpr int kStatusEveryNPolls = 10;
 /// failure rather than a faster recovery.
 constexpr int kRecoveryDelayPolls = 12;  // ~600 ms
 
+/// Attempts made at the quick cadence above before backing off.
+constexpr int kFastRecoveryAttempts = 10;  // ~6 s
+
+/// The slower cadence used after that.
+///
+/// Six seconds of retrying covers a device being unplugged and plugged back in,
+/// and nothing longer. It does not cover a machine resuming from sleep: USB
+/// audio can take the better part of a minute to re-enumerate, and against a
+/// six-second budget the app gave up while the hardware was still coming back —
+/// then sat stopped for the rest of the day.
+constexpr int kSlowRecoveryDelayPolls = 100;  // ~5 s
+
 /// After this many failures the device is treated as genuinely gone and the
 /// user is told, instead of the app retrying silently forever.
-constexpr int kMaxRecoveryAttempts = 10;
+///
+/// Ten fast attempts then twenty-four slow ones is about two minutes, which is
+/// longer than any resume observed and still short enough that a device which
+/// really is gone does not leave the status line lying for an afternoon.
+constexpr int kMaxRecoveryAttempts = 34;
 
 /// How long the engine has to survive before a later fault counts as a new
 /// problem rather than a continuation of the one being recovered from. Without
 /// this, a device that accepts a connection and then drops it would reset the
 /// retry budget on every cycle and the app would never conclude anything.
 constexpr int kHealthyPolls = 100;  // ~5 s
+
+/// Polls of quiet before a burst of dropouts is written to the log. A resume
+/// produces them by the dozen over a second or so, and one line per poll would
+/// bury the one fact worth having under fifty copies of itself.
+constexpr int kDropoutSettlePolls = 20;  // ~1 s
 
 QString toQString(const std::wstring& text) {
     return QString::fromWCharArray(text.c_str(), static_cast<int>(text.size()));
@@ -94,28 +115,24 @@ void AudioController::setDevices(const QString& captureId, const QString& render
     }
 }
 
-QString AudioController::resolveUsableDevice(const QString& preferredId,
-                                             const QString& avoidId) const {
-    const std::vector<DeviceChoice> devices = availableDevices();
-
-    // The device the user chose, if it is back.
-    for (const DeviceChoice& device : devices) {
+QString AudioController::resolveUsableDevice(const QString& preferredId) const {
+    // The device the user chose, and nothing else.
+    //
+    // This used to fall back: first to the system default, then to whatever
+    // else was in the list. Measured on a real unplug, that put the output on
+    // an HDMI monitor — an endpoint the listener cannot hear, chosen silently,
+    // with the app reporting a successful reconnection. Substituting the
+    // capture side is worse still: it taps a virtual cable that everything else
+    // is playing into, and any other cable has nothing playing into it at all.
+    //
+    // The retry budget and the re-arm on device change are what make waiting
+    // the better answer. A device that comes back is reconnected to within a
+    // second; a device that does not is reported, and the user picks another
+    // one deliberately. Neither outcome is a guess the user has to discover by
+    // hearing nothing.
+    for (const DeviceChoice& device : availableDevices()) {
         if (device.id == preferredId) {
             return preferredId;
-        }
-    }
-
-    // Otherwise the system default, which is where Windows has moved playback.
-    for (const DeviceChoice& device : devices) {
-        if (device.isDefault && device.id != avoidId) {
-            return device.id;
-        }
-    }
-
-    // Otherwise anything that is not the other end of the loop.
-    for (const DeviceChoice& device : devices) {
-        if (device.id != avoidId) {
-            return device.id;
         }
     }
     return {};
@@ -152,6 +169,7 @@ bool AudioController::start() {
 
     lastError_.clear();
     wasRunning_ = true;
+    userWantsRunning_ = true;
     recovering_ = false;
     recoveryAttempts_ = 0;
     pollsSinceStart_ = 0;
@@ -164,8 +182,10 @@ bool AudioController::start() {
 }
 
 void AudioController::stop() {
-    // Clearing this first matters: a deliberate stop must not look like a
-    // device failure and get undone by the recovery path.
+    // Clearing these first matters: a deliberate stop must not look like a
+    // device failure and get undone by the recovery path, nor leave the
+    // watcher armed to restart something the user has just switched off.
+    userWantsRunning_ = false;
     recovering_ = false;
     recoveryAttempts_ = 0;
 
@@ -178,17 +198,43 @@ void AudioController::stop() {
 }
 
 void AudioController::onDeviceChanged() {
-    if (!recovering_) {
+    if (recovering_) {
+        // Something moved; try again now rather than waiting out the timer.
+        pollsUntilRetry_ = 2;
         return;
     }
-    // Something moved; try again now rather than waiting out the timer.
-    pollsUntilRetry_ = 2;
+
+    // Recovery had been given up on — but a device has just appeared or changed
+    // state, and that is new information the decision to give up was made
+    // without. Arm again.
+    //
+    // Without this, giving up was permanent: the retry budget ran out, the
+    // watcher's callback returned at the guard above, and the app stayed
+    // stopped no matter what was plugged in afterwards. The budget exists to
+    // stop the app retrying *silently and forever*, not to make a verdict that
+    // outlives the evidence for it.
+    //
+    // This cannot spin: it is driven by device notifications from the system,
+    // not by a timer, and a device that connects and immediately drops is
+    // caught by the kHealthyPolls rule below instead.
+    if (userWantsRunning_ && !running()) {
+        AL_INFO("デバイスが変化しました。再接続を試み直します。");
+        recovering_ = true;
+        recoveryAttempts_ = 0;
+        pollsUntilRetry_ = 2;
+        emit statusChanged(status());
+    }
 }
 
 bool AudioController::attemptRecovery() {
-    const QString capture = resolveUsableDevice(desiredCaptureId_, desiredRenderId_);
-    const QString render = resolveUsableDevice(desiredRenderId_, capture);
+    const QString capture = resolveUsableDevice(desiredCaptureId_);
+    const QString render = resolveUsableDevice(desiredRenderId_);
 
+    // Empty means the device the user chose is still missing, so there is
+    // nothing to reconnect to yet. The equality check is kept as a belt: the
+    // two ids can only match if the user managed to choose the same device for
+    // both, which start() rejects, but a silent audio loop is bad enough to be
+    // worth two comparisons.
     if (capture.isEmpty() || render.isEmpty() || capture == render) {
         return false;
     }
@@ -252,6 +298,65 @@ EngineStatus AudioController::status() const {
     return s;
 }
 
+void AudioController::reportDropouts() {
+    const EngineStats stats = engine_.stats();
+    const quint64 under = stats.underruns;
+    const quint64 over = stats.overruns;
+
+    // A counter that went *backwards* means the engine restarted and began
+    // again from zero — a recovery, not a dropout. Rebasing rather than
+    // subtracting matters: these are unsigned, so the difference would wrap to
+    // something astronomical and get logged as a catastrophe that never
+    // happened.
+    const quint64 resyncs = stats.resyncs;
+
+    if (under < loggedUnderruns_ || over < loggedOverruns_ || resyncs < loggedResyncs_) {
+        loggedUnderruns_ = under;
+        loggedOverruns_ = over;
+        loggedResyncs_ = resyncs;
+        dropoutQuietPolls_ = 0;
+        return;
+    }
+
+    if (under == loggedUnderruns_ && over == loggedOverruns_ && resyncs == loggedResyncs_) {
+        dropoutQuietPolls_ = 0;
+        return;
+    }
+
+    // Held back until the burst has stopped, then logged once. A resume
+    // produces dropouts by the dozen over a second or so; a line per poll would
+    // bury the one fact worth having under fifty copies of itself.
+    if (++dropoutQuietPolls_ < kDropoutSettlePolls) {
+        return;
+    }
+
+    // Which way it broke is the whole point of recording this. The status line
+    // adds the two together, so a burst of dropouts says only that something
+    // went wrong — not whether the ring ran dry or overflowed, which call for
+    // opposite fixes. The fill at the time says how far from target it ended.
+    AL_WARN(
+        "途切れ: underrun {} (+{}) / overrun {} (+{}, 空白 {} 箇所) / "
+        "再同期 {} (+{}, 破棄 {:.0f} ms) / "
+        "不連続 {} / リング {:.1f} ms (最小 {:.1f} / 最大 {:.1f} / 容量 {:.1f})",
+        static_cast<unsigned long long>(under),
+        static_cast<unsigned long long>(under - loggedUnderruns_),
+        static_cast<unsigned long long>(over),
+        static_cast<unsigned long long>(over - loggedOverruns_),
+        static_cast<unsigned long long>(stats.overrunBursts),
+        static_cast<unsigned long long>(resyncs),
+        static_cast<unsigned long long>(resyncs - loggedResyncs_),
+        stats.sampleRate > 0 ? 1000.0 * static_cast<double>(stats.resyncDroppedFrames) /
+                                   stats.sampleRate
+                             : 0.0,
+        static_cast<unsigned long long>(stats.discontinuities), stats.ringFillMs,
+        stats.ringFillMinMs, stats.ringFillMaxMs, stats.ringCapacityMs);
+
+    loggedUnderruns_ = under;
+    loggedOverruns_ = over;
+    loggedResyncs_ = resyncs;
+    dropoutQuietPolls_ = 0;
+}
+
 void AudioController::poll() {
     const dsp::LevelSnapshot levels = chain_.levels();
     emit levelsChanged(levels.inputPeak, levels.outputPeak, levels.gainReductionDb);
@@ -283,7 +388,8 @@ void AudioController::poll() {
         if (--pollsUntilRetry_ > 0) {
             return;
         }
-        pollsUntilRetry_ = kRecoveryDelayPolls;
+        pollsUntilRetry_ = recoveryAttempts_ < kFastRecoveryAttempts ? kRecoveryDelayPolls
+                                                                    : kSlowRecoveryDelayPolls;
 
         if (attemptRecovery()) {
             emit statusChanged(status());
@@ -303,6 +409,7 @@ void AudioController::poll() {
 
     if (engine_.running()) {
         ++pollsSinceStart_;
+        reportDropouts();
     }
 
     if (engine_.running() != wasRunning_) {
