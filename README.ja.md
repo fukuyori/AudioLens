@@ -4,6 +4,8 @@
 
 PC で再生される音声を、用途に合わせて聞き取りやすく調整するプリセット型オーディオ補助アプリ(Windows)。
 
+![AudioLens](images/screenshot.png)
+
 - リポジトリ: <https://github.com/fukuyori/AudioLens>
 - バージョンは `CMakeLists.txt` の `project(... VERSION ...)` が唯一の出所で、そこから
   `AUDIOLENS_VERSION` としてコードに渡る。トレイメニューと `AudioLens.exe --version` で確認できる。

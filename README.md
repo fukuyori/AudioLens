@@ -5,6 +5,8 @@
 A preset-based audio assistance app for Windows that adjusts whatever the PC is
 playing so it is easier to hear.
 
+![AudioLens](images/screenshot.png)
+
 - Repository: <https://github.com/fukuyori/AudioLens>
 - The version lives in `project(... VERSION ...)` in `CMakeLists.txt` and nowhere
   else. It reaches the code as `AUDIOLENS_VERSION`, and is visible in the tray
