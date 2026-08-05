@@ -142,15 +142,25 @@ bool AudioEngine::start(const EngineConfig& config, std::string* error) {
     // application is playing, not by a crystal. Against a capacity of 88 ms that
     // left four milliseconds of headroom, which is not a margin, it is luck.
     //
-    // Two periods of target is what the delay is worth; six of capacity is what
-    // the delivery demands.
+    // Three periods of target is what the delay is worth; six of capacity is
+    // what the delivery demands.
+    //
+    // Two was the figure until the idle top-up was fixed (2026-08-05), and it
+    // only looked sufficient because that top-up was quietly refilling the ring
+    // every period — at the price of splicing silence into the audio. With the
+    // splicing gone the true behaviour showed: the fill dipped to 3.6 ms, a
+    // sixth of a period from running dry, on ordinary continuous playback.
+    //
+    // The extra period costs 22 ms of delay here. That is the trade the whole
+    // engine is meant to make: a dropout is heard as a fault, and 22 ms is not
+    // heard at all.
     const std::size_t period = capture_.bufferFrames();
     const std::size_t ringFrames =
         std::max<std::size_t>(msToFrames(config_.ringMs, sampleRate_), period * 6);
     ring_ = std::make_unique<RingBuffer>(ringFrames, channels_);
 
     // Kept clear of both ends even if a caller asks for an unusually small ring.
-    targetFillFrames_ = std::clamp<std::size_t>(period * 2, period, ringFrames - period);
+    targetFillFrames_ = std::clamp<std::size_t>(period * 3, period, ringFrames - period);
     capturePeriodFrames_ = capture_.bufferFrames();
     smoothedFill_ = static_cast<double>(targetFillFrames_);
     ringFillMin_ = ringFrames;
@@ -185,6 +195,21 @@ bool AudioEngine::start(const EngineConfig& config, std::string* error) {
     // a full period of draining before anything was put back.
     captureWaitMs_ = std::max<DWORD>(1, static_cast<DWORD>(capturePeriodMs / 4.0));
     renderWaitMs_ = std::max<DWORD>(20, static_cast<DWORD>(renderPeriodMs * 4.0));
+
+    // How long the endpoint must deliver *nothing* before its silence is taken
+    // to be real. This has to be a span of time, and it has to be longer than
+    // one capture period, because one capture period is the ordinary gap
+    // between packets when audio is playing perfectly normally.
+    //
+    // It was a fixed count of two wakes, which was right when the timeout was a
+    // whole period and became wrong the moment the timeout was shortened to a
+    // quarter of one: two wakes then spanned half a period, so *every* ordinary
+    // gap between packets looked like the source going quiet, and silence was
+    // spliced into audio that had never stopped. Three periods leaves no room
+    // for that to happen by accident, and still notices real silence long
+    // before the ring — which holds several periods — could run dry.
+    captureIdleWakes_ = std::max<int>(
+        2, static_cast<int>(std::ceil(3.0 * capturePeriodMs / captureWaitMs_)));
 
     if (processor_ != nullptr) {
         processor_->prepare(sampleRate_, channels_, capture_.bufferFrames());
@@ -273,10 +298,10 @@ void AudioEngine::captureLoop() {
     // decays into the denormal range during silence.
     ScopedNoDenormals noDenormals;
 
-    // Two consecutive empty wakes mean the tapped endpoint has genuinely gone
-    // quiet, rather than a single wake that merely raced a packet. Only then is
-    // it safe to push silence, which must never land in the middle of real audio.
-    constexpr int kIdleWakesBeforeSilence = 2;
+    // Silence must never land in the middle of real audio, so the threshold is
+    // computed from the wait timeout in open() rather than fixed here: see the
+    // note there for what a fixed count cost.
+    const int idleWakesBeforeSilence = captureIdleWakes_;
     int idleWakes = 0;
 
     while (!stopRequested_.load(std::memory_order_acquire)) {
@@ -357,7 +382,7 @@ void AudioEngine::captureLoop() {
         // has silence to play instead of starving.
         if (gotAudio) {
             idleWakes = 0;
-        } else if (++idleWakes >= kIdleWakesBeforeSilence) {
+        } else if (++idleWakes >= idleWakesBeforeSilence) {
             const std::size_t fill = ring_->availableToRead();
             if (fill < targetFillFrames_) {
                 const std::size_t added = ring_->writeSilence(targetFillFrames_ - fill);
@@ -417,11 +442,18 @@ void AudioEngine::renderLoop() {
         // decided in the one callback where the fill peaked, and a reader
         // sampling twice a second will never see it.
         //
-        // The low mark only starts counting once the ring has filled to target
-        // for the first time. Before that it is empty by construction, and
-        // recording zero there would report no margin at all on every run
-        // regardless of how the run then went.
-        if (!ringReachedTarget_ && fillFrames >= targetFillFrames_) {
+        // The low mark only starts counting once the ring has something real in
+        // it. Before that it is empty by construction, and recording zero there
+        // would report no margin at all on every run regardless of how the run
+        // then went.
+        //
+        // Armed at one period, not at the target. Arming at the target assumed
+        // the fill always gets there, and when it does not — which is exactly
+        // the case worth knowing about — the low mark was never recorded at all
+        // and the run reported a full ring of margin. A diagnostic that goes
+        // quiet precisely when the thing it measures goes wrong is worse than
+        // none, because it reads as good news.
+        if (!ringReachedTarget_ && fillFrames >= capturePeriodFrames_) {
             ringReachedTarget_ = true;
         }
         if (ringReachedTarget_ && fillFrames < ringFillMin_) {

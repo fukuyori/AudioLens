@@ -156,6 +156,11 @@ private:
     DWORD captureWaitMs_ = 20;
     DWORD renderWaitMs_ = 20;
 
+    /// Consecutive empty capture wakes that mean the tapped endpoint really has
+    /// gone quiet. Derived from `captureWaitMs_` so that it stays a fixed amount
+    /// of *time* however the timeout is tuned.
+    int captureIdleWakes_ = 2;
+
     std::vector<float> captureScratch_;
     std::vector<float> renderScratch_;
     /// Holds capture-rate frames on their way from the ring into the resampler.

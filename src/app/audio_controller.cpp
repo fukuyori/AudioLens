@@ -239,6 +239,7 @@ EngineStatus AudioController::status() const {
     s.latencyMs = stats.estimatedLatencyMs();
     s.underruns = stats.underruns;
     s.overruns = stats.overruns;
+    s.silenceFillFrames = stats.silenceFills;
     s.captureSampleRate = stats.captureSampleRate;
     s.renderSampleRate = stats.renderSampleRate;
     s.recovering = recovering_;

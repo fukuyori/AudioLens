@@ -1048,6 +1048,17 @@ void MainWindow::updateStatusLabel(const EngineStatus& status) {
         if (status.underruns > 0 || status.overruns > 0) {
             text += QStringLiteral("  途切れ %1 回").arg(status.underruns + status.overruns);
         }
+        // Shown separately from the dropout count because it is a different
+        // fault with a different sound. A dropout is the ring running dry; this
+        // is silence deliberately inserted, and when it is inserted wrongly it
+        // is heard as a click rather than a gap. Reported in milliseconds
+        // because a frame count means nothing to the person hearing it.
+        if (status.silenceFillFrames > 0 && status.captureSampleRate > 0) {
+            text += QStringLiteral("  無音補填 %1 ms")
+                        .arg(1000.0 * static_cast<double>(status.silenceFillFrames) /
+                                 status.captureSampleRate,
+                             0, 'f', 0);
+        }
         statusLabel_->setText(text);
     } else if (status.recovering) {
         statusLabel_->setText(status.message);

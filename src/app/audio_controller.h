@@ -28,6 +28,13 @@ struct EngineStatus {
     quint64 underruns = 0;
     quint64 overruns = 0;
 
+    /// Frames of silence the engine pushed into the ring because the tapped
+    /// endpoint had gone quiet. Surfaced because a bug that made this fire in
+    /// the *middle* of audio — audible as a click every period — was invisible
+    /// for as long as the counter was: the run showed zero underruns and zero
+    /// overruns while splicing 76 ms of silence into every 30 seconds of sound.
+    quint64 silenceFillFrames = 0;
+
     /// True while the controller is trying to get back on its feet after a
     /// device disappeared. The UI shows this rather than an error, because
     /// nothing is wrong that the user has to act on.
