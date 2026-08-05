@@ -97,7 +97,11 @@ void printUsage() {
         "  --bass <0-100>      「低音」。プリセットの値を上書き\n"
         "  --clarity <0-100>   「声の明瞭さ」\n"
         "  --leveling <0-100>  「音量差」\n"
-        "  --ab <秒>           指定秒ごとに補正のオン/オフを切り替えて比較する\n");
+        "  --ab <秒>           指定秒ごとに補正のオン/オフを切り替えて比較する\n"
+        "\n"
+        "計測:\n"
+        "  --fill-log <path>   リング充填量とトリムを 20 ms ごとに CSV へ記録する。\n"
+        "                      ドリフト制御ループの外乱を時間分解して見るために使う\n");
 }
 
 bool parseSlider(const char* text, int* out) {
@@ -168,6 +172,7 @@ int main(int argc, char** argv) {
     int clarity = -1;
     int leveling = -1;
     std::uint32_t abSeconds = 0;
+    std::string fillLogPath;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -224,6 +229,8 @@ int main(int argc, char** argv) {
                 std::puts("--ab の値が不正です");
                 return 2;
             }
+        } else if (arg == "--fill-log") {
+            fillLogPath = next("--fill-log");
         } else if (arg == "--takeover") {
             takeover = true;
         } else if (arg == "--set-default") {
@@ -407,8 +414,34 @@ int main(int argc, char** argv) {
     auto nextAbToggle = startTime + std::chrono::seconds(abSeconds > 0 ? abSeconds : 1);
     EngineStats previous;
 
+    // Sampled here on the control thread, never from the audio callbacks: the
+    // whole point of the ring is that nothing blocking happens on those, and a
+    // file write is the most blocking thing there is. 20 ms is fast enough to
+    // resolve anything down to a 0.1 s period, which is well below the capture
+    // period the disturbance is expected to sit near.
+    //
+    // Rows are accumulated in memory and written at the end, so the logging
+    // itself cannot introduce the scheduling jitter it is meant to measure.
+    struct FillSample {
+        double elapsed;
+        double fillMs;
+        double driftPpm;
+    };
+    std::vector<FillSample> fillLog;
+    if (!fillLogPath.empty()) {
+        fillLog.reserve(64 * 1024);
+    }
+
     while (!g_stopRequested.load(std::memory_order_acquire)) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        std::this_thread::sleep_for(std::chrono::milliseconds(fillLogPath.empty() ? 200 : 20));
+
+        if (!fillLogPath.empty()) {
+            const EngineStats sample = engine.stats();
+            fillLog.push_back({std::chrono::duration<double>(std::chrono::steady_clock::now() -
+                                                             startTime)
+                                   .count(),
+                               sample.ringFillMs, sample.driftPpm});
+        }
 
         if (!engine.faultReason().empty()) {
             std::printf("\n停止しました: %s\n", engine.faultReason().c_str());
@@ -451,6 +484,20 @@ int main(int argc, char** argv) {
     const EngineStats final = engine.stats();
     engine.stop();
     restoreDefaultDevice();
+
+    if (!fillLog.empty()) {
+        if (std::FILE* file = std::fopen(fillLogPath.c_str(), "w")) {
+            std::fputs("elapsed_s,fill_ms,drift_ppm\n", file);
+            for (const FillSample& row : fillLog) {
+                std::fprintf(file, "%.3f,%.3f,%.1f\n", row.elapsed, row.fillMs, row.driftPpm);
+            }
+            std::fclose(file);
+            std::printf("充填ログを書き出しました: %s (%zu 行)\n", fillLogPath.c_str(),
+                        fillLog.size());
+        } else {
+            std::printf("充填ログを書き出せません: %s\n", fillLogPath.c_str());
+        }
+    }
 
     const auto totalSec =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - startTime).count();

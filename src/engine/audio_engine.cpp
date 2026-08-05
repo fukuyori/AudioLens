@@ -89,6 +89,14 @@ constexpr double kDriftGain = 0.001;
 /// so it only engages while recovering from a genuine disruption.
 constexpr double kMaxTrim = 0.002;  // ±2000 ppm
 
+/// Render callbacks the output may stay silent while the ring fills to target.
+///
+/// Filling takes one target's worth of real time plus the capture side's first
+/// packet — around 90 ms, or nine callbacks. A hundred is therefore a very loose
+/// bound, and it is a bound rather than a wait-forever because a source that
+/// never delivers must not leave the user in silence: a thin ring still plays.
+constexpr int kMaxPrimingWakes = 100;
+
 }  // namespace
 
 AudioEngine::~AudioEngine() { stop(); }
@@ -162,6 +170,15 @@ bool AudioEngine::start(const EngineConfig& config, std::string* error) {
     // Kept clear of both ends even if a caller asks for an unusually small ring.
     targetFillFrames_ = std::clamp<std::size_t>(period * 3, period, ringFrames - period);
     capturePeriodFrames_ = capture_.bufferFrames();
+
+    renderPrimed_ = false;
+    renderPrimingWakes_ = 0;
+
+    // Pre-filling the ring with silence here was tried first and does not work:
+    // the render side consumes it before the capture side has delivered
+    // anything, so the fill lands exactly where it would have without it. The
+    // hold-off in renderLoop() is what actually establishes the level; see the
+    // note there.
     smoothedFill_ = static_cast<double>(targetFillFrames_);
     ringFillMin_ = ringFrames;
     ringFillMax_ = 0;
@@ -423,6 +440,45 @@ void AudioEngine::renderLoop() {
         const std::uint32_t want = renderBufferFrames - padding;
         if (want == 0) {
             continue;
+        }
+
+        // --- hold off until the ring has filled to target ---
+        //
+        // The render side is ready to pull the instant it starts; the capture
+        // side cannot deliver anything until its first packet completes, one
+        // whole capture period later. Pulling through that window drains the
+        // ring by a capture period plus the render buffer's initial fill — 44 ms
+        // of the 66 ms target, measured. What is left is then handed to the
+        // drift loop to make up, and that loop has a seven-minute crossover, so
+        // the ring spent the first minutes of every run well below target with
+        // the margin to match.
+        //
+        // Emitting silence until the ring is ready costs one target's worth of
+        // silence at startup, which nobody hears, and hands the loop a ring that
+        // already sits where it belongs.
+        if (!renderPrimed_) {
+            if (ring_->availableToRead() < targetFillFrames_ &&
+                renderPrimingWakes_ < kMaxPrimingWakes) {
+                ++renderPrimingWakes_;
+                void* silence = nullptr;
+                if (FAILED(render_.acquireBuffer(want, &silence))) {
+                    reportFault("再生バッファの取得に失敗しました");
+                    break;
+                }
+                // Not counted as an underrun: the stream has not started yet, so
+                // this is not the ring failing to keep up with anything.
+                if (FAILED(render_.releaseBuffer(want, AUDCLNT_BUFFERFLAGS_SILENT))) {
+                    reportFault("再生バッファの解放に失敗しました");
+                    break;
+                }
+                continue;
+            }
+            // The bound exists so that a source which never delivers cannot
+            // hold the output silent indefinitely; better a thin ring than no
+            // sound at all.
+            renderPrimed_ = true;
+            AL_DEBUG("再生開始: リング {} / 目標 {} フレーム ({} 回待機)",
+                     ring_->availableToRead(), targetFillFrames_, renderPrimingWakes_);
         }
 
         // --- clock drift correction ---

@@ -161,6 +161,12 @@ private:
     /// of *time* however the timeout is tuned.
     int captureIdleWakes_ = 2;
 
+    /// Render-thread only. False until the ring has first reached its target,
+    /// during which the output is silent rather than draining a ring that the
+    /// capture side has not had time to fill.
+    bool renderPrimed_ = false;
+    int renderPrimingWakes_ = 0;
+
     std::vector<float> captureScratch_;
     std::vector<float> renderScratch_;
     /// Holds capture-rate frames on their way from the ring into the resampler.

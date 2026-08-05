@@ -1,4 +1,4 @@
-# AudioLens 0.1.7
+# AudioLens 0.1.8
 
 PC で再生される音声を、用途に合わせて聞き取りやすく調整するプリセット型オーディオ補助アプリ(Windows)。
 
@@ -65,6 +65,11 @@ $bin = ".\build\release\bin"
 
 # デバイス変更への追従(N-03)を試す。サンプルレートを一時的に変えて元に戻す
 & $bin\audiolens_passthrough.exe --invalidate "CABLE Input"
+
+# リング充填とリサンプラーのトリムを 20 ms ごとに CSV へ記録する。
+#   ドリフト制御の挙動を時間分解して見るための診断。5 秒ごとの表示では
+#   10 秒より速い成分がすべて折り返すので、この分解能でないと判断を誤る
+& $bin\audiolens_passthrough.exe --capture "CABLE Input" --render "ヘッドホン" --fill-log fill.csv
 
 # WAV に対してオフラインで処理し、効果を数値で確認する
 & $bin\audiolens_process.exe --input in.wav --output out.wav --preset movie
