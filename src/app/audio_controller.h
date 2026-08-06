@@ -82,6 +82,11 @@ public:
     /// line adds them together, and the two call for opposite fixes.
     void reportDropouts();
 
+    /// Writes a periodic line saying the engine is still well, with the figures
+    /// that drift. Without it a healthy long run leaves no record at all, and
+    /// "eight hours without trouble" is indistinguishable from "stopped early".
+    void reportHealth();
+
     /// Bypasses the processing without changing the signal path or its latency,
     /// so a listener comparing the two is hearing only the processing.
     void setBypass(bool bypass);
@@ -149,6 +154,7 @@ private:
     quint64 loggedOverruns_ = 0;
     quint64 loggedResyncs_ = 0;
     int dropoutQuietPolls_ = 0;
+    int pollsSinceHealth_ = 0;
 };
 
 }  // namespace audiolens::app

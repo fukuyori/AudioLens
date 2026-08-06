@@ -139,6 +139,20 @@ public:
 
     EngineStats stats() const;
 
+    /// Ring fill extremes seen since this was last called, in milliseconds, and
+    /// starts a fresh window. Returns false if nothing was measured.
+    ///
+    /// Distinct from the marks in EngineStats, which run from the start of the
+    /// stream. Those answer "how close did this configuration ever come to the
+    /// edge", which is the right question to ask once, at the end of a run.
+    ///
+    /// They are the wrong answer for a report that repeats. An eight-hour run
+    /// set its high-water mark inside the first half hour — a source-side
+    /// transition the ring absorbed — after which every line carried that same
+    /// number, and whether the rest of the night held excursions of its own
+    /// could not be told from the log at all.
+    bool takeRingFillWindow(double* minMs, double* maxMs) noexcept;
+
 private:
     void captureLoop();
     void renderLoop();
@@ -217,6 +231,13 @@ private:
     std::atomic<std::uint32_t> lastRenderPadding_{0};
     std::atomic<std::uint32_t> ringFillMinFrames_{0};
     std::atomic<std::uint32_t> ringFillMaxFrames_{0};
+
+    /// The same marks, but reset by whoever reads them, so that each periodic
+    /// report describes its own interval. Written by the render thread with a
+    /// compare-exchange rather than a store, because the reset arrives from
+    /// another thread.
+    std::atomic<std::uint32_t> ringFillWindowMinFrames_{0};
+    std::atomic<std::uint32_t> ringFillWindowMaxFrames_{0};
     std::atomic<std::uint32_t> ringCapacityFrames_{0};
 };
 

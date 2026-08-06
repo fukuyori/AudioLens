@@ -97,6 +97,27 @@ constexpr double kMaxTrim = 0.002;  // ±2000 ppm
 /// never delivers must not leave the user in silence: a thin ring still plays.
 constexpr int kMaxPrimingWakes = 100;
 
+/// Raise a published high-water mark to `value` if it is higher.
+///
+/// A plain load-then-store would be enough if the render thread were the only
+/// party involved, but the windowed marks are reset by whoever reads them, and
+/// a reset landing between the load and the store would be undone — losing
+/// exactly the excursion the next report was meant to describe.
+void raiseTo(std::atomic<std::uint32_t>& mark, std::uint32_t value) noexcept {
+    std::uint32_t seen = mark.load(std::memory_order_relaxed);
+    while (value > seen &&
+           !mark.compare_exchange_weak(seen, value, std::memory_order_relaxed)) {
+    }
+}
+
+/// The same, downwards, for a low-water mark.
+void lowerTo(std::atomic<std::uint32_t>& mark, std::uint32_t value) noexcept {
+    std::uint32_t seen = mark.load(std::memory_order_relaxed);
+    while (value < seen &&
+           !mark.compare_exchange_weak(seen, value, std::memory_order_relaxed)) {
+    }
+}
+
 }  // namespace
 
 AudioEngine::~AudioEngine() { stop(); }
@@ -185,6 +206,9 @@ bool AudioEngine::start(const EngineConfig& config, std::string* error) {
     ringReachedTarget_ = false;
     ringFillMinFrames_.store(static_cast<std::uint32_t>(ringFrames), std::memory_order_relaxed);
     ringFillMaxFrames_.store(0, std::memory_order_relaxed);
+    ringFillWindowMinFrames_.store(static_cast<std::uint32_t>(ringFrames),
+                                   std::memory_order_relaxed);
+    ringFillWindowMaxFrames_.store(0, std::memory_order_relaxed);
     ringCapacityFrames_.store(static_cast<std::uint32_t>(ringFrames), std::memory_order_relaxed);
 
     resampler_ = std::make_unique<dsp::Resampler>();
@@ -552,9 +576,14 @@ void AudioEngine::renderLoop() {
         // capacity moments earlier. The mark exists to say how close the
         // configuration came to the edge, and a mark that is reset by the
         // mechanism guarding the edge answers a different question.
-        if (const std::size_t peek = ring_->availableToRead(); peek > ringFillMax_) {
-            ringFillMax_ = peek;
-            ringFillMaxFrames_.store(static_cast<std::uint32_t>(peek), std::memory_order_relaxed);
+        {
+            const std::size_t peek = ring_->availableToRead();
+            raiseTo(ringFillWindowMaxFrames_, static_cast<std::uint32_t>(peek));
+            if (peek > ringFillMax_) {
+                ringFillMax_ = peek;
+                ringFillMaxFrames_.store(static_cast<std::uint32_t>(peek),
+                                         std::memory_order_relaxed);
+            }
         }
 
         if (ring_->availableToRead() + capturePeriodFrames_ >= ring_->capacityFrames()) {
@@ -590,11 +619,15 @@ void AudioEngine::renderLoop() {
         if (!ringReachedTarget_ && fillFrames >= capturePeriodFrames_) {
             ringReachedTarget_ = true;
         }
-        if (ringReachedTarget_ && fillFrames < ringFillMin_) {
-            ringFillMin_ = fillFrames;
-            ringFillMinFrames_.store(static_cast<std::uint32_t>(fillFrames),
-                                     std::memory_order_relaxed);
+        if (ringReachedTarget_) {
+            lowerTo(ringFillWindowMinFrames_, static_cast<std::uint32_t>(fillFrames));
+            if (fillFrames < ringFillMin_) {
+                ringFillMin_ = fillFrames;
+                ringFillMinFrames_.store(static_cast<std::uint32_t>(fillFrames),
+                                         std::memory_order_relaxed);
+            }
         }
+        raiseTo(ringFillWindowMaxFrames_, static_cast<std::uint32_t>(fillFrames));
         if (fillFrames > ringFillMax_) {
             ringFillMax_ = fillFrames;
             ringFillMaxFrames_.store(static_cast<std::uint32_t>(fillFrames),
@@ -687,6 +720,28 @@ EngineStats AudioEngine::stats() const {
     s.captureLatencyMs = capture_.streamLatencyMs();
     s.renderLatencyMs = render_.streamLatencyMs();
     return s;
+}
+
+bool AudioEngine::takeRingFillWindow(double* minMs, double* maxMs) noexcept {
+    const std::uint32_t capacity = ringCapacityFrames_.load(std::memory_order_relaxed);
+    const std::uint32_t high = ringFillWindowMaxFrames_.exchange(0, std::memory_order_relaxed);
+    const std::uint32_t low = ringFillWindowMinFrames_.exchange(capacity, std::memory_order_relaxed);
+
+    // Nothing ran between this call and the last one: the marks are still at the
+    // values a fresh window starts from. Saying so is the point — reporting the
+    // reset values as a measurement would read as a ring that sat empty.
+    if (sampleRate_ == 0 || high == 0) {
+        return false;
+    }
+
+    const double rate = static_cast<double>(sampleRate_);
+    if (minMs != nullptr) {
+        *minMs = 1000.0 * std::min(low, high) / rate;
+    }
+    if (maxMs != nullptr) {
+        *maxMs = 1000.0 * high / rate;
+    }
+    return true;
 }
 
 }  // namespace audiolens

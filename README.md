@@ -1,4 +1,4 @@
-# AudioLens 0.2.1
+# AudioLens 0.2.2
 
 *[日本語](README.ja.md)*
 
@@ -40,12 +40,19 @@ be installed separately to serve as the capture source.
 | M4 virtual device driver | **Cancelled.** Record of the work up to a successful build: [driver/README.md](driver/README.md) |
 | M5 finishing | Not started |
 
-**Personal use only, and no self-written kernel driver** (decided 2026-08-04). A
-bug in kernel mode means a blue screen or a machine that will not boot, whereas
-a virtual audio device is only the way sound gets in. A widely distributed driver
-carrying a Microsoft signature is the safer choice, so VB-Cable and the like are
-used as the capture source. The reasoning is in
-[docs/requirements.md](docs/requirements.md) section 4.1.
+**No self-written kernel driver.** A bug in kernel mode means a blue screen or a
+machine that will not boot, whereas a virtual audio device is only the way sound
+gets in. A widely distributed driver carrying a Microsoft signature is the safer
+choice, so VB-Cable and the like are used as the capture source.
+
+**VB-Cable is not bundled — install it yourself.** It belongs to VB-Audio and
+redistributing it needs their agreement, so the installer checks for it and says
+so if it is missing, and nothing more. Its licence terms are between you and
+VB-Audio: free for personal use, with a separate licence for business or
+professional use. See <https://vb-audio.com/Cable/>.
+
+The reasoning behind both is in [docs/requirements.md](docs/requirements.md)
+sections 4.1 and 4.1.1.
 
 Measured: the Film preset narrows the loudness range (EBU R128 LRA) from 17.99 to
 13.13 LU. The music presets deliberately leave it alone (17.99 to 17.99 LU) —

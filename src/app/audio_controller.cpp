@@ -52,6 +52,18 @@ constexpr int kHealthyPolls = 100;  // ~5 s
 /// bury the one fact worth having under fifty copies of itself.
 constexpr int kDropoutSettlePolls = 20;  // ~1 s
 
+/// How often the engine writes a line saying it is still well.
+///
+/// Everything else in the log is an event: something went wrong and here is the
+/// note. That leaves a long run with nothing written at all, and no way to tell
+/// "ran for eight hours without trouble" from "died after ten minutes and
+/// nobody noticed". A heartbeat carrying the figures that drift — latency and
+/// the high-water marks — turns an empty log into evidence.
+///
+/// Ten minutes gives 48 lines across an eight-hour run: enough to see a trend,
+/// few enough to read.
+constexpr int kHealthEveryNPolls = 12000;  // ~10 min
+
 QString toQString(const std::wstring& text) {
     return QString::fromWCharArray(text.c_str(), static_cast<int>(text.size()));
 }
@@ -355,6 +367,34 @@ void AudioController::reportDropouts() {
     dropoutQuietPolls_ = 0;
 }
 
+void AudioController::reportHealth() {
+    const EngineStats stats = engine_.stats();
+    // The total, the same figure the status line shows, because the acceptance
+    // criterion is stated on end-to-end latency and 100 ms is not far above
+    // what has been measured. A run that stays under it needs to be able to
+    // prove so afterwards.
+    const double total = stats.estimatedLatencyMs() + chain_.latencyMs();
+
+    // The extremes of this interval, not of the whole run. The run-long marks
+    // are in the final report; here they would be a constant, because the
+    // largest excursion of an eight-hour night happened in its first half hour
+    // and every line after it repeated that one number.
+    double windowMin = stats.ringFillMs;
+    double windowMax = stats.ringFillMs;
+    engine_.takeRingFillWindow(&windowMin, &windowMax);
+
+    AL_INFO("health: latency {:.1f} ms (buffer {:.1f} / processing {:.1f}) / "
+            "ring {:.1f} ms (min {:.1f} / max {:.1f} / capacity {:.1f}) / "
+            "underrun {} / overrun {} ({} gaps) / resync {} / silence {} / drift {:+.0f} ppm",
+            total, stats.estimatedLatencyMs(), chain_.latencyMs(), stats.ringFillMs,
+            stats.ringFillMinMs, stats.ringFillMaxMs, stats.ringCapacityMs,
+            static_cast<unsigned long long>(stats.underruns),
+            static_cast<unsigned long long>(stats.overruns),
+            static_cast<unsigned long long>(stats.overrunBursts),
+            static_cast<unsigned long long>(stats.resyncs),
+            static_cast<unsigned long long>(stats.silenceFills), stats.driftPpm);
+}
+
 void AudioController::poll() {
     const dsp::LevelSnapshot levels = chain_.levels();
     emit levelsChanged(levels.inputPeak, levels.outputPeak, levels.gainReductionDb);
@@ -408,6 +448,10 @@ void AudioController::poll() {
     if (engine_.running()) {
         ++pollsSinceStart_;
         reportDropouts();
+        if (++pollsSinceHealth_ >= kHealthEveryNPolls) {
+            pollsSinceHealth_ = 0;
+            reportHealth();
+        }
     }
 
     if (engine_.running() != wasRunning_) {
