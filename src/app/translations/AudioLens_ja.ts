@@ -147,6 +147,16 @@ it back on stop. Off, the switching is yours to do.</source>
         <translation>Windows の起動時に開始する</translation>
     </message>
     <message>
+        <source>Start in the tray, without the window</source>
+        <translation>ウィンドウを出さず、トレイで開始する</translation>
+    </message>
+    <message>
+        <source>Applies when you start AudioLens yourself. Starting with Windows
+never shows the window. Open it again from the tray icon.</source>
+        <translation>自分で起動したときに効きます。Windows の起動時に開始する場合は、
+もともとウィンドウを出しません。トレイアイコンから開けます。</translation>
+    </message>
+    <message>
         <source>Language</source>
         <translation>言語</translation>
     </message>

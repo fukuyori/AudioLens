@@ -147,6 +147,7 @@ MainWindow::MainWindow() {
     reloadPresets();
     refreshDeviceLists();
     startWithWindowsCheck_->setChecked(settings_.startWithWindows);
+    startMinimizedCheck_->setChecked(settings_.startMinimized);
     takeOverCheck_->setChecked(settings_.takeOverDefaultDevice);
     languageCombo_->setCurrentIndex(
         std::max(0, languageCombo_->findData(languageToString(settings_.language))));
@@ -427,6 +428,17 @@ QWidget* MainWindow::buildDeviceSection() {
     connect(startWithWindowsCheck_, &QCheckBox::toggled, this,
             &MainWindow::onStartWithWindowsToggled);
     layout->addWidget(startWithWindowsCheck_);
+
+    // Only about launching it yourself. Starting with Windows already passes
+    // --minimized, because a window appearing over whatever you were doing at
+    // login is not what "start with Windows" is asking for.
+    startMinimizedCheck_ = new QCheckBox(tr("Start in the tray, without the window"));
+    startMinimizedCheck_->setToolTip(
+        tr("Applies when you start AudioLens yourself. Starting with Windows\n"
+           "never shows the window. Open it again from the tray icon."));
+    connect(startMinimizedCheck_, &QCheckBox::toggled, this,
+            &MainWindow::onStartMinimizedToggled);
+    layout->addWidget(startMinimizedCheck_);
 
     // Language sits here rather than in a settings dialog of its own. There is
     // no such dialog, and one control does not justify inventing one; this
@@ -987,6 +999,14 @@ void MainWindow::onStartWithWindowsToggled(bool enabled) {
     persistSettings();
 }
 
+void MainWindow::onStartMinimizedToggled(bool enabled) {
+    if (loading_) {
+        return;
+    }
+    settings_.startMinimized = enabled;
+    persistSettings();
+}
+
 void MainWindow::onTakeOverToggled(bool enabled) {
     if (loading_) {
         return;
@@ -1232,6 +1252,68 @@ QString MainWindow::presetListing() const {
     return lines.join(QLatin1Char('\n'));
 }
 
+int MainWindow::findDeviceRow(QComboBox* combo, const QString& name, QString* problem) const {
+    const std::vector<DeviceChoice> devices = controller_.availableDevices();
+
+    // Exact first. Without it, a device whose whole name is contained in a
+    // longer one -- "Speakers" beside "Speakers (USB2.0 Device)" -- could never
+    // be selected, because naming it exactly would still match both.
+    for (const DeviceChoice& device : devices) {
+        if (device.displayName.compare(name, Qt::CaseInsensitive) == 0) {
+            return combo->findData(device.id);
+        }
+    }
+
+    QStringList matched;
+    QString onlyId;
+    for (const DeviceChoice& device : devices) {
+        if (device.displayName.contains(name, Qt::CaseInsensitive)) {
+            matched << device.displayName;
+            onlyId = device.id;
+        }
+    }
+    if (matched.size() == 1) {
+        return combo->findData(onlyId);
+    }
+
+    // Refused rather than guessed at. Picking the wrong output device is a
+    // mistake nobody sees: it is heard, later, as nothing at all.
+    if (matched.isEmpty()) {
+        *problem = QStringLiteral("No device matches '%1'. Try --list-outputs.").arg(name);
+    } else {
+        *problem = QStringLiteral("'%1' matches more than one device:\n  %2\n"
+                                  "Give enough of the name to pick just one.")
+                       .arg(name, matched.join(QStringLiteral("\n  ")));
+    }
+    return -1;
+}
+
+QString MainWindow::deviceListing() const {
+    const QString outputId = renderCombo_->currentData().toString();
+    const QString inputId = captureCombo_->currentData().toString();
+
+    QStringList lines;
+    for (const DeviceChoice& device : controller_.availableDevices()) {
+        QStringList marks;
+        if (device.id == outputId) {
+            marks << QStringLiteral("output");
+        }
+        if (device.id == inputId) {
+            marks << QStringLiteral("input");
+        }
+        if (device.isDefault) {
+            marks << QStringLiteral("system default");
+        }
+        lines << (marks.isEmpty()
+                      ? device.displayName
+                      : QStringLiteral("%1  [%2]").arg(device.displayName,
+                                                       marks.join(QStringLiteral(", "))));
+    }
+    lines << QStringLiteral("(one list serves --output and --input: the capture side taps a "
+                            "playback device through loopback)");
+    return lines.join(QLatin1Char('\n'));
+}
+
 QString MainWindow::statusReport() const {
     const EngineStatus status = controller_.status();
     QStringList lines;
@@ -1256,6 +1338,7 @@ QString MainWindow::statusReport() const {
     lines << QStringLiteral("bypass    %1")
                  .arg(controller_.bypassed() ? QStringLiteral("on") : QStringLiteral("off"));
     lines << QStringLiteral("output    %1").arg(renderCombo_->currentText());
+    lines << QStringLiteral("input     %1").arg(captureCombo_->currentText());
 
     if (status.running) {
         // The same two figures the status line shows, added rather than nested:
@@ -1316,6 +1399,30 @@ bool MainWindow::applyControlRequest(const ControlRequest& request, QString* rep
     // honoured left to right. Applying the preset first makes both orderings of
     // the same command line mean the same thing, which is what anyone writing
     // the second one expects.
+    //
+    // Routing comes before even that, for the same reason one step further out:
+    // changing the output device applies whatever was remembered for it -- its
+    // preset, amounts, volume and balance (F-13). Anything else on the same
+    // command line has to land after that, or the profile would overwrite it.
+    const auto route = [&](QComboBox* combo, const std::optional<QString>& name) {
+        if (!name) {
+            return;
+        }
+        QString problem;
+        const int row = findDeviceRow(combo, *name, &problem);
+        if (row < 0) {
+            lines << problem;
+            ok = false;
+            return;
+        }
+        // Through the widget, so the same handler runs that would have run had
+        // the user picked it from the list: the default-output takeover moves
+        // with the capture device, and the profile is applied and stored.
+        combo->setCurrentIndex(row);
+    };
+    route(renderCombo_, request.output);
+    route(captureCombo_, request.input);
+
     if (request.preset) {
         const int row = findPresetRow(*request.preset);
         if (row < 0) {
@@ -1386,6 +1493,9 @@ bool MainWindow::applyControlRequest(const ControlRequest& request, QString* rep
 
     if (request.listPresets) {
         lines << presetListing();
+    }
+    if (request.listOutputs) {
+        lines << deviceListing();
     }
     if (request.status) {
         lines << statusReport();

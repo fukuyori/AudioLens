@@ -65,11 +65,11 @@ bool ControlRequest::changesState() const {
     return preset.has_value() || volume.has_value() || volumeStep.has_value() ||
            balance.has_value() || bass.has_value() || clarity.has_value() ||
            leveling.has_value() || power.has_value() || powerToggle || bypass.has_value() ||
-           show || hide || quit;
+           output.has_value() || input.has_value() || show || hide || quit;
 }
 
 bool ControlRequest::actsOnRunningInstance() const {
-    return changesState() || status || listPresets;
+    return changesState() || status || listPresets || listOutputs;
 }
 
 ControlRequest parseControlRequest(const QStringList& arguments) {
@@ -100,6 +100,12 @@ ControlRequest parseControlRequest(const QStringList& arguments) {
             fine = takeInt(arguments, i, flag, 0, 100, &request.leveling, &request.error);
         } else if (flag == QStringLiteral("--bypass")) {
             fine = takeOnOff(arguments, i, flag, &request.bypass, &request.error);
+        } else if (flag == QStringLiteral("--output")) {
+            fine = takeText(arguments, i, flag, &request.output, &request.error);
+        } else if (flag == QStringLiteral("--input")) {
+            fine = takeText(arguments, i, flag, &request.input, &request.error);
+        } else if (flag == QStringLiteral("--list-outputs")) {
+            request.listOutputs = true;
         } else if (flag == QStringLiteral("--on")) {
             request.power = true;
         } else if (flag == QStringLiteral("--off")) {
@@ -166,9 +172,20 @@ QString controlUsage() {
         "  --bypass on|off       Hear the sound before processing. The path and\n"
         "                        the latency do not change. Not saved.\n"
         "\n"
+        "Routing\n"
+        "  --output <name>       Where the sound goes. Part of the name is enough;\n"
+        "                        a name matching more than one device is refused\n"
+        "                        rather than guessed at.\n"
+        "  --input <name>        Where it is picked up -- the virtual cable.\n"
+        "                        Changing it moves the default-output takeover\n"
+        "                        with it.\n"
+        "\n"
         "Reporting\n"
         "  --status              Print what is running, and how well.\n"
         "  --list-presets        Print the preset ids and names.\n"
+        "  --list-outputs        Print the devices --output and --input accept.\n"
+        "                        One list serves both: the capture side taps a\n"
+        "                        playback device through loopback.\n"
         "\n"
         "Window and process\n"
         "  --show, --hide        Show or hide the window. The tray icon stays.\n"

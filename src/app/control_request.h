@@ -36,9 +36,15 @@ struct ControlRequest {
     /// where it is applied.
     std::optional<bool> bypass;
 
+    /// Where the sound goes, and where it is picked up. Named rather than
+    /// identified: a device id is a stable opaque string nobody can type.
+    std::optional<QString> output;
+    std::optional<QString> input;
+
     // --- what to report ---
     bool status = false;
     bool listPresets = false;
+    bool listOutputs = false;
 
     // --- the window and the process ---
     bool show = false;

@@ -75,6 +75,7 @@ private:
     void onSaveUserPreset();
     void onDeleteUserPreset();
     void onStartWithWindowsToggled(bool enabled);
+    void onStartMinimizedToggled(bool enabled);
     void onTakeOverToggled(bool enabled);
     void onRememberDeviceToggled(bool enabled);
     void onLanguageChanged();
@@ -102,8 +103,13 @@ private:
     /// hand into a shell, where nobody holds shift for a preset called Movie.
     int findPresetRow(const QString& name) const;
 
+    /// Combo row of the device whose name is, or contains, `name`. Returns -1
+    /// and fills `problem` when nothing matches or more than one thing does.
+    int findDeviceRow(QComboBox* combo, const QString& name, QString* problem) const;
+
     QString statusReport() const;
     QString presetListing() const;
+    QString deviceListing() const;
 
     void showAndRaise();
 
@@ -166,6 +172,7 @@ private:
     QComboBox* renderCombo_ = nullptr;
     QComboBox* languageCombo_ = nullptr;
     QCheckBox* startWithWindowsCheck_ = nullptr;
+    QCheckBox* startMinimizedCheck_ = nullptr;
     QCheckBox* takeOverCheck_ = nullptr;
     QCheckBox* rememberDeviceCheck_ = nullptr;
 

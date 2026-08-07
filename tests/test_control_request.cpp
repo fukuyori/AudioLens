@@ -117,6 +117,35 @@ AL_TEST(control_request_knows_what_a_running_instance_can_act_on) {
     CHECK(parse({"--quit"}).actsOnRunningInstance());
 }
 
+AL_TEST(control_request_reads_the_routing_options) {
+    // ASCII throughout: the helper above builds its QStrings with fromLatin1,
+    // and the names only have to exercise the parser, which never looks inside
+    // them.
+    const ControlRequest request =
+        parse({"--output", "Speakers (USB2.0 Device)", "--input", "CABLE Input"});
+
+    CHECK(request.error.isEmpty());
+    CHECK(request.output.has_value() &&
+          *request.output == QStringLiteral("Speakers (USB2.0 Device)"));
+    CHECK(request.input.has_value() && *request.input == QStringLiteral("CABLE Input"));
+
+    // A device name is taken whole, spaces and brackets and all. The shell has
+    // already done the quoting; the parser must not try to be clever about it.
+    const ControlRequest one = parse({"--output", "Speakers (Realtek High Definition Audio)"});
+    CHECK(*one.output == QStringLiteral("Speakers (Realtek High Definition Audio)"));
+
+    CHECK(!parse({"--output"}).error.isEmpty());
+    CHECK(!parse({"--input"}).error.isEmpty());
+}
+
+AL_TEST(control_request_treats_routing_as_a_change_and_listing_as_a_question) {
+    CHECK(parse({"--output", "Headphones"}).changesState());
+    CHECK(parse({"--input", "CABLE Input"}).changesState());
+
+    CHECK(!parse({"--list-outputs"}).changesState());
+    CHECK(parse({"--list-outputs"}).actsOnRunningInstance());
+}
+
 AL_TEST(control_request_separates_asking_from_changing) {
     // What decides whether a command line is worth starting the app for when
     // none is running. Starting one to report that it is running answers

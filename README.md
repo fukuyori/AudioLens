@@ -1,4 +1,4 @@
-# AudioLens 3.0.0
+# AudioLens 0.3.1
 
 *[日本語](README.ja.md)*
 
@@ -149,6 +149,14 @@ $bin = ".\build\release\bin"
 & $bin\AudioLens.exe --bass 20 --clarity 80    # applied after --preset, always
 & $bin\AudioLens.exe --toggle                  # processing on/off
 & $bin\AudioLens.exe --bypass on               # hear it before processing
+
+# Where the sound goes, and where it is picked up. Part of the name is enough.
+# A name matching more than one device is refused, with the candidates listed:
+# picking the wrong output is a mistake only ever noticed as silence.
+& $bin\AudioLens.exe --output USB2.0
+& $bin\AudioLens.exe --output "Speakers (Razer USB Audio Enhancer)"
+& $bin\AudioLens.exe --input "CABLE Input"
+
 & $bin\AudioLens.exe --quit                    # exit, giving the device back
 & $bin\AudioLens.exe --help                    # every option, with its range
 
@@ -156,6 +164,7 @@ $bin = ".\build\release\bin"
 # windowed program: the text otherwise lands after the prompt has returned.
 Start-Process -Wait -NoNewWindow $bin\AudioLens.exe -ArgumentList '--status'
 Start-Process -Wait -NoNewWindow $bin\AudioLens.exe -ArgumentList '--list-presets'
+Start-Process -Wait -NoNewWindow $bin\AudioLens.exe -ArgumentList '--list-outputs'
 
 # Exit codes: 0 = done / 1 = not running, or could not be carried out /
 #             2 = bad command line (unknown option, out of range, missing value)
@@ -241,6 +250,7 @@ the language they were thought in. This README is the English entry point.
 
 | Document | Contents |
 |---|---|
+| [CHANGELOG.md](CHANGELOG.md) | Notable changes, newest first |
 | [docs/requirements.md](docs/requirements.md) | Requirements (functional, non-functional, acceptance criteria) |
 | [docs/architecture.md](docs/architecture.md) | Architecture (approach, DSP design, roadmap) |
 | [docs/m1-engine-notes.md](docs/m1-engine-notes.md) | M1 notes (drift correction, measured latency, known limits) |

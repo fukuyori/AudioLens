@@ -1,4 +1,4 @@
-# AudioLens 3.0.0
+# AudioLens 0.3.1
 
 *[English](README.md)*
 
@@ -97,6 +97,13 @@ $bin = ".\build\release\bin"
 & $bin\AudioLens.exe --bass 20 --clarity 80    # 書いた順によらず --preset の後に適用
 & $bin\AudioLens.exe --toggle                  # 処理の入切
 & $bin\AudioLens.exe --bypass on               # 処理前の音を聴く
+
+# 出力先・取り込み元。名前は一部で足りる。複数に当たったら推測せず拒否し、
+# 候補を並べる（出力先の取り違えは「音が出ない」としてしか気づけないため）
+& $bin\AudioLens.exe --output USB2.0
+& $bin\AudioLens.exe --output "スピーカー (Razer USB Audio Enhancer)"
+& $bin\AudioLens.exe --input "CABLE Input"
+
 & $bin\AudioLens.exe --quit                    # 既定デバイスを戻して終了
 & $bin\AudioLens.exe --help                    # 全オプションと範囲
 
@@ -104,6 +111,7 @@ $bin = ".\build\release\bin"
 # そのまま実行するとプロンプトが戻ったあとに文字が現れる。
 Start-Process -Wait -NoNewWindow $bin\AudioLens.exe -ArgumentList '--status'
 Start-Process -Wait -NoNewWindow $bin\AudioLens.exe -ArgumentList '--list-presets'
+Start-Process -Wait -NoNewWindow $bin\AudioLens.exe -ArgumentList '--list-outputs'
 
 # 終了コード: 0 = 実行した / 1 = 常駐していない・実行できなかった /
 #             2 = コマンドラインが不正(未知のオプション、範囲外、値の欠落)
@@ -172,6 +180,7 @@ Get-Content "$env:APPDATA\AudioLens\audiolens.log" -Tail 40
 
 | ドキュメント | 内容 |
 |---|---|
+| [CHANGELOG.md](CHANGELOG.md) | 変更履歴(英語、新しい順) |
 | [docs/requirements.md](docs/requirements.md) | 要件定義書(機能要件・非機能要件・成功基準) |
 | [docs/architecture.md](docs/architecture.md) | アーキテクチャ設計書(方式選定・DSP 設計・ロードマップ) |
 | [docs/m1-engine-notes.md](docs/m1-engine-notes.md) | M1 実装メモ(ドリフト補正・遅延実測・既知の制限) |

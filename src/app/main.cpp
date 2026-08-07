@@ -238,8 +238,9 @@ int main(int argc, char** argv) {
     // translated at construction time. Installing a catalogue afterwards would
     // leave the interface in whatever language it was first laid out in.
     audiolens::app::SettingsStore store;
+    const audiolens::app::AppSettings stored = store.loadSettings();
     const audiolens::app::Language language =
-        audiolens::app::installTranslator(app, store.loadSettings().language);
+        audiolens::app::installTranslator(app, stored.language);
     AL_INFO("Interface language: {}",
             audiolens::app::languageToString(language).toStdString());
 
@@ -257,7 +258,10 @@ int main(int argc, char** argv) {
         writeConsole(reply);
     }
 
-    if (!request.minimized && !request.hide) {
+    // `--minimized` and the stored preference say the same thing by two roads:
+    // the flag is what the Run entry passes at login, the setting is for
+    // launching it yourself. Either one is enough to stay in the tray.
+    if (!request.minimized && !request.hide && !stored.startMinimized) {
         window.show();
     }
 
