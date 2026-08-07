@@ -1,4 +1,4 @@
-# AudioLens 0.3.1
+# AudioLens 0.4.0
 
 *[日本語](README.ja.md)*
 
@@ -41,6 +41,13 @@ serve as the capture source.
 | M4 virtual device driver | **Cancelled.** Record of the work up to a successful build: [driver/README.md](driver/README.md) |
 | M5 finishing | **Met.** All four success criteria ([docs/requirements.md](docs/requirements.md) §5) |
 | F-36 command-line control | Implemented, confirmed on hardware |
+
+One functional requirement is outstanding: **F-23, editing the EQ curve directly
+in a detail mode** (low priority). It was implemented once and rejected — the
+window it produced was unusable. What went wrong, and what a second attempt has
+to do differently, is kept in [docs/requirements.md](docs/requirements.md)
+§2.3.1. F-14 (preset export and import) was dropped: copying the JSON file
+already does it (§2.2.1).
 
 **No self-written kernel driver.** A bug in kernel mode means a blue screen or a
 machine that will not boot, whereas a virtual audio device is only the way sound
@@ -204,7 +211,7 @@ Start-Process -Wait -NoNewWindow $bin\AudioLens.exe -ArgumentList '--list-output
 & $bin\audiolens_process.exe --input in.wav --output out.wav --preset movie --no-autogain
 & $bin\audiolens_process.exe --input in.wav --output out.wav --preset movie --no-deesser
 
-# Unit tests (no hardware required, 121 of them)
+# Unit tests (no hardware required, 123 of them)
 & $bin\audiolens_tests.exe
 
 # Process loopback spike (used to settle option E; the answer was no)

@@ -36,6 +36,9 @@
 #include <algorithm>
 #include <initializer_list>
 
+// Last, after Qt: it defines enough bare macros to break anything it precedes.
+#include <windows.h>
+
 namespace audiolens::app {
 namespace {
 
@@ -1211,6 +1214,26 @@ void MainWindow::persistSettings() {
 // ------------------------------------------------------ command line (F-36) ---
 
 void MainWindow::showAndRaise() {
+    // Qt keeps its own idea of whether this window is up, and Windows keeps
+    // another. They can come apart: the show state in a process's STARTUPINFO
+    // -- SW_HIDE, from a shortcut set to run hidden or from a launcher that
+    // asked for it -- is applied to the first ShowWindow call the process
+    // makes, whoever makes it. Qt's own show() is the call that gets swallowed.
+    // Qt then records the window as visible, and every showNormal() afterwards
+    // asks the OS to re-show something it has already been told to keep hidden,
+    // which does nothing.
+    //
+    // That would leave no way back to the window at all, and this function is
+    // the way back -- it is what the tray menu and --show both call. Hiding
+    // first makes Qt's state agree with the screen, so the show that follows
+    // has something to do. Only when the two have actually diverged, so the
+    // ordinary case does not flicker.
+    // The condition asks Windows, and only Windows. Qt's isVisible() is exactly
+    // the value that cannot be trusted here -- it is the one that says "shown"
+    // about a window nobody can see.
+    if (::IsWindowVisible(reinterpret_cast<HWND>(winId())) == FALSE) {
+        hide();
+    }
     showNormal();
     raise();
     activateWindow();

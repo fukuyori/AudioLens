@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(AudioLens
-    VERSION 0.3.1
+    VERSION 0.4.0
     DESCRIPTION "Preset-based audio assistance for Windows playback"
     LANGUAGES CXX)
 

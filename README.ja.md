@@ -1,4 +1,4 @@
-# AudioLens 0.3.1
+# AudioLens 0.4.0
 
 *[English](README.md)*
 
@@ -28,6 +28,8 @@ PC で再生される音声を、用途に合わせて聞き取りやすく調�
 | M4 仮想デバイスドライバ | **中止。** ビルド成功までの記録([driver/README.md](driver/README.md)) |
 | M5 仕上げ | **達成。** 成功基準 4 項目すべて([docs/requirements.md](docs/requirements.md) §5) |
 | F-36 コマンドライン制御 | 実装済み・実機確認済み |
+
+残る機能要件は **F-23(詳細モードでの EQ カーブ直接編集、優先度 低)の 1 つ** です。一度実装しましたが、操作性が酷く却下されました。何が駄目だったかと、次に取り組むときの条件は [docs/requirements.md](docs/requirements.md) §2.3.1 に残してあります。F-14(プリセットのエクスポート/インポート)は、JSON ファイルをコピーすれば済むため見送りました(§2.2.1)。
 
 **自作カーネルドライバは使いません。** カーネルモードのバグはブルースクリーンや起動不能を招くのに対し、仮想オーディオデバイスは音の入口にすぎません。広く配布され Microsoft の署名を受けた既存ドライバのほうが安全なので、取り込み元には VB-Cable 等を使います。
 
@@ -150,7 +152,7 @@ Start-Process -Wait -NoNewWindow $bin\AudioLens.exe -ArgumentList '--list-output
 & $bin\audiolens_process.exe --input in.wav --output out.wav --preset movie --no-autogain
 & $bin\audiolens_process.exe --input in.wav --output out.wav --preset movie --no-deesser
 
-# 単体テスト(ハードウェア不要、121 件)
+# 単体テスト(ハードウェア不要、123 件)
 & $bin\audiolens_tests.exe
 
 # プロセスループバック検証(案 E の判定に使った。結論は不成立)

@@ -77,6 +77,7 @@ public:
     void applyPreset(const Preset& preset, const SliderValues& sliders, int outputVolume,
                      int balance);
 
+
     /// Writes one line to the log when the dropout counters have moved and then
     /// settled. Separating underruns from overruns is the point: the status
     /// line adds them together, and the two call for opposite fixes.

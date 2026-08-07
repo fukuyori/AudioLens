@@ -9,30 +9,9 @@ version the build disagrees with.
 
 Dates are the dates of the release commit.
 
-## 0.3.1 — 2026-08-07
+## 0.4.0 — 2026-08-07
 
 ### Added
-
-- **Routing from the command line.** `--output` and `--input` take a device by
-  name, and part of the name is enough — the device id is a stable opaque string
-  nobody can type. A name matching more than one device is refused with the
-  candidates listed rather than guessed at: picking the wrong output device is a
-  mistake nothing on screen reflects, and it is noticed later as silence. An
-  exact name is tried before any substring, so a device whose whole name is
-  contained in a longer one can still be chosen.
-
-  ```
-  --output <name>   --input <name>   --list-outputs
-  ```
-
-  `--list-outputs` prints what the two options accept, marking the current
-  output, the current input and the system default. One list serves both,
-  because the capture side taps a playback device through loopback.
-
-  Routing is applied before everything else on the command line. Changing the
-  output device applies whatever was remembered for it — preset, amounts, volume
-  and balance (F-13) — so a `--volume` on the same line has to land after that
-  or the profile would overwrite it.
 
 - **"Start in the tray, without the window"** (F-37), beside "Start with
   Windows". Starting with Windows already passed `--minimized` — a window
@@ -45,6 +24,25 @@ Dates are the dates of the release commit.
   to the same path `--minimized` already took.
 
 - `--status` now reports the capture device alongside the output device.
+
+### Removed
+
+- **The detail window, an attempt at F-23, was built and rejected.** It listed
+  all fifty-one resolved DSP settings in signal order with the frequency
+  response, first read-only and then with the values editable. The editable form
+  is what settled it: every value needs a range, a step and a unit, so it came
+  to thirty spin boxes in one window, and what the requirement calls *editing
+  the curve directly* had turned into a table of numbers. Reading it got harder
+  too, which was the one thing the window was for.
+
+  **F-23 stays open.** What went wrong, and what a second attempt has to do
+  differently — start from the curve itself, and show the screen before building
+  it — is recorded in `docs/requirements.md` §2.3.1.
+
+- **F-14, preset export and import, is dropped.** A user preset is already one
+  JSON file under `%APPDATA%\AudioLens\presets`. Copying it is the export;
+  putting it there is the import. All the requirement would add is a file
+  dialog. Recorded in §2.2.1.
 
 ## 0.3.0 — 2026-08-07
 
