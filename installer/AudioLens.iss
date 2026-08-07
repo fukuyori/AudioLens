@@ -61,15 +61,39 @@ PrivilegesRequiredOverridesAllowed=dialog
 CloseApplications=yes
 RestartApplications=no
 
+; PATH に触れる可能性があるため、環境変数の変更を通知する。これが無いと、
+; 追加しても新しいコマンドプロンプトにしか反映されない。
+ChangesEnvironment=yes
+
 [Languages]
 Name: "japanese"; MessagesFile: "compiler:Languages\Japanese.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "デスクトップにショートカットを作成する"; Flags: unchecked
 
+; コマンドラインから操作する人向け(要件 F-36)。既定はオフ。
+;
+; 利用者の PATH を書き換える操作であり、失敗すれば影響は AudioLens の外に出る。
+; 黙って行ってよいものではないので、選んだ人にだけ行う。ショートカットとトレイ
+; だけで使う人には不要でもある。
+Name: "addtopath"; Description: "コマンドラインから使えるように PATH に追加する"; \
+    Flags: unchecked
+
 ; 「Windows 起動時に開始」はここには置かない。AudioLens 自身が画面の
 ; チェックボックスで HKCU の Run キーを管理しており、インストーラーが同じ
 ; ものを書くと、設定が二か所にあって食い違う。
+
+[Registry]
+; uninsdeletevalue は付けないこと。それは Path という値そのものを消す指定で、
+; 利用者の PATH を丸ごと失わせる。自分の分だけを取り除くのはアンインストール時の
+; RemoveFromPath の仕事である。
+;
+; preservestringtype は、既存の値の型(通常 REG_EXPAND_SZ)を保つ。REG_SZ で
+; 書き戻すと %USERPROFILE% のような記述が展開されなくなり、その PATH に載って
+; いた他のプログラムが見つからなくなる。
+Root: HKA; Subkey: "{code:EnvironmentKey}"; ValueType: expandsz; ValueName: "Path"; \
+    ValueData: "{olddata};{app}"; Tasks: addtopath; Check: NeedsAddPath('{app}'); \
+    Flags: preservestringtype
 
 [Files]
 ; ビルド生成物のうち配布に不要なものを除く。.pdb と .ilk だけで 187 MB あり、
@@ -97,6 +121,70 @@ Filename: "{app}\{#AppExe}"; Description: "AudioLens を起動する"; \
     Flags: nowait postinstall skipifsilent
 
 [Code]
+// --- PATH への追加 (要件 F-36) ---
+//
+// 昇格したかどうかで書き先が変わる。昇格していなければその利用者の PATH、
+// していれば Program Files に入る全利用者向けの導入なので、システムの PATH に
+// 書く。両者は別のキーであり、ルートが違うだけではない。
+
+function EnvironmentKey(Param: String): String;
+begin
+  if IsAdminInstallMode() then
+    Result := 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment'
+  else
+    Result := 'Environment';
+end;
+
+function EnvironmentRoot: Integer;
+begin
+  if IsAdminInstallMode() then
+    Result := HKEY_LOCAL_MACHINE
+  else
+    Result := HKEY_CURRENT_USER;
+end;
+
+function NeedsAddPath(Param: String): Boolean;
+var
+  Existing: String;
+begin
+  // 値が無ければ、追加して作る。
+  if not RegQueryStringValue(EnvironmentRoot(), EnvironmentKey(''), 'Path', Existing) then
+  begin
+    Result := True;
+    Exit;
+  end;
+
+  // 前後をセミコロンで囲ってから探す。囲わないと部分一致してしまい、
+  // 「C:\Program Files\AudioLens」が既にある「C:\Program Files\AudioLens2」に
+  // 含まれるという理由で、追加を飛ばすことになる。
+  Result := Pos(';' + Uppercase(ExpandConstant(Param)) + ';',
+                ';' + Uppercase(Existing) + ';') = 0;
+end;
+
+procedure RemoveFromPath;
+var
+  Root: Integer;
+  Key, Existing, Target, Padded: String;
+  Found: Integer;
+begin
+  Root := EnvironmentRoot();
+  Key := EnvironmentKey('');
+  if not RegQueryStringValue(Root, Key, 'Path', Existing) then
+    Exit;
+
+  Target := ExpandConstant('{app}');
+  Padded := ';' + Existing + ';';
+  Found := Pos(';' + Uppercase(Target) + ';', Uppercase(Padded));
+  // 追加していない、あるいは利用者が既に外している。触らない。
+  if Found = 0 then
+    Exit;
+
+  // 自分の分を、直前の区切り 1 つとあわせて取り除く。他の項目には手を触れない。
+  Delete(Padded, Found, Length(Target) + 1);
+  // 探すために付けた前後のセミコロンを外して書き戻す。
+  RegWriteExpandStringValue(Root, Key, 'Path', Copy(Padded, 2, Length(Padded) - 2));
+end;
+
 function NeedsVCRuntime: Boolean;
 var
   Installed: Cardinal;
@@ -136,6 +224,10 @@ var
 begin
   if CurUninstallStep <> usPostUninstall then
     Exit;
+
+  // 設定を残すかどうかの問いより先に。「いいえ」を選んでも、あるいは
+  // %APPDATA% に何も無くて下で早々に抜けても、PATH からは必ず消える。
+  RemoveFromPath();
 
   // 設定・プリセット・ログは既定では残す。作り直すのが面倒なものであり、
   // 再インストールしたときにそのまま使えるほうがよい。

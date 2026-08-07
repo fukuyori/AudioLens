@@ -387,7 +387,7 @@ void AudioController::reportHealth() {
             "ring {:.1f} ms (min {:.1f} / max {:.1f} / capacity {:.1f}) / "
             "underrun {} / overrun {} ({} gaps) / resync {} / silence {} / drift {:+.0f} ppm",
             total, stats.estimatedLatencyMs(), chain_.latencyMs(), stats.ringFillMs,
-            stats.ringFillMinMs, stats.ringFillMaxMs, stats.ringCapacityMs,
+            windowMin, windowMax, stats.ringCapacityMs,
             static_cast<unsigned long long>(stats.underruns),
             static_cast<unsigned long long>(stats.overruns),
             static_cast<unsigned long long>(stats.overrunBursts),

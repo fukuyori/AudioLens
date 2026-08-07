@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25)
 
 project(AudioLens
-    VERSION 0.2.2
+    VERSION 3.0.0
     DESCRIPTION "Preset-based audio assistance for Windows playback"
     LANGUAGES CXX)
 
@@ -70,7 +70,11 @@ if(AUDIOLENS_BUILD_GUI)
     # into the .qm that gets compiled into the binary. Without it in this list
     # the Qt6::lupdate target does not exist, qt_add_translations is skipped,
     # and the app builds and runs in English only - which is what happened.
-    find_package(Qt6 6.5 COMPONENTS Widgets LinguistTools QUIET)
+    # Network is not for networking. QLocalServer lives there, and that is what
+    # carries the command line to an instance that is already running
+    # (requirement F-36) - a named pipe on Windows, which never leaves the
+    # machine and is restricted to the user who opened it.
+    find_package(Qt6 6.5 COMPONENTS Widgets Network LinguistTools QUIET)
     if(Qt6_FOUND)
         qt_standard_project_setup()
         add_subdirectory(src/app)

@@ -30,6 +30,7 @@
 #include <QSettings>
 #include <QSlider>
 #include <QSystemTrayIcon>
+#include <QTimer>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -517,20 +518,25 @@ void MainWindow::buildTrayIcon() {
     versionAction->setEnabled(false);
     trayMenu_->addSeparator();
 
+    // A command, not a state, and so deliberately not checkable.
+    //
+    // A checkable entry has to answer two questions in one row: what happens if
+    // you click it, and what is true now. Those disagree when the label is a
+    // verb. While processing ran, the menu showed a ticked 「停止」 -- which
+    // reads as "stopped" to anyone who does not already know the tick means the
+    // opposite of the word beside it.
+    //
+    // The verb is the half worth keeping. Whether processing is running is
+    // already in the tray icon's colour, and the window says it in words.
     trayPowerAction_ = trayMenu_->addAction(tr("Start"));
-    trayPowerAction_->setCheckable(true);
-    connect(trayPowerAction_, &QAction::toggled, this,
-            [this](bool on) { powerButton_->setChecked(on); });
+    connect(trayPowerAction_, &QAction::triggered, this,
+            [this] { powerButton_->setChecked(!powerButton_->isChecked()); });
 
     trayPresetMenu_ = trayMenu_->addMenu(tr("Presets"));
 
     trayMenu_->addSeparator();
     QAction* showAction = trayMenu_->addAction(tr("Show window"));
-    connect(showAction, &QAction::triggered, this, [this] {
-        showNormal();
-        raise();
-        activateWindow();
-    });
+    connect(showAction, &QAction::triggered, this, &MainWindow::showAndRaise);
 
     QAction* quitAction = trayMenu_->addAction(tr("Quit"));
     connect(quitAction, &QAction::triggered, this, [this] {
@@ -544,9 +550,7 @@ void MainWindow::buildTrayIcon() {
     connect(tray_, &QSystemTrayIcon::activated, this,
             [this](QSystemTrayIcon::ActivationReason reason) {
                 if (reason == QSystemTrayIcon::Trigger || reason == QSystemTrayIcon::DoubleClick) {
-                    showNormal();
-                    raise();
-                    activateWindow();
+                    showAndRaise();
                 }
             });
     tray_->show();
@@ -1155,8 +1159,8 @@ void MainWindow::syncPowerUi(bool on) {
     powerButton_->setText(on ? tr("Stop") : tr("Start"));
 
     if (trayPowerAction_ != nullptr) {
-        QSignalBlocker trayBlocker(trayPowerAction_);
-        trayPowerAction_->setChecked(on);
+        // No signal blocker: setText emits nothing, which is the other half of
+        // why the entry is a plain command now.
         trayPowerAction_->setText(on ? tr("Stop") : tr("Start"));
     }
     if (tray_ != nullptr) {
@@ -1182,6 +1186,228 @@ void MainWindow::persistSettings() {
         settings_.activePresetId = qs(preset->id);
     }
     store_.saveSettings(settings_);
+}
+
+// ------------------------------------------------------ command line (F-36) ---
+
+void MainWindow::showAndRaise() {
+    showNormal();
+    raise();
+    activateWindow();
+}
+
+int MainWindow::findPresetRow(const QString& name) const {
+    for (int i = 0; i < presets_.size(); ++i) {
+        if (qs(presets_[i].id).compare(name, Qt::CaseInsensitive) == 0) {
+            return i;
+        }
+    }
+    // Then the display name, which is what someone reads off the screen before
+    // going to the shell. Second rather than first because ids are unique and
+    // names need not be.
+    //
+    // Matched as translated, not as written in the source. The window shows
+    // 「映画」and the source string is "Film"; a user who types what they can
+    // see would otherwise be told there is no such preset while looking
+    // straight at it. The untranslated form is accepted too, for a script
+    // written on one machine and run on another with a different language.
+    for (int i = 0; i < presets_.size(); ++i) {
+        if (presetName(presets_[i]).compare(name, Qt::CaseInsensitive) == 0 ||
+            qs(presets_[i].name).compare(name, Qt::CaseInsensitive) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+QString MainWindow::presetListing() const {
+    QStringList lines;
+    for (int i = 0; i < presets_.size(); ++i) {
+        lines << QStringLiteral("%1%2  %3")
+                     .arg(qs(presets_[i].id), -16)
+                     .arg(i >= userPresetStartIndex_ ? QStringLiteral("*") : QStringLiteral(" "),
+                          presetName(presets_[i]));
+    }
+    lines << QStringLiteral("(* = your own preset)");
+    return lines.join(QLatin1Char('\n'));
+}
+
+QString MainWindow::statusReport() const {
+    const EngineStatus status = controller_.status();
+    QStringList lines;
+
+    lines << QStringLiteral("state     %1")
+                 .arg(status.running        ? QStringLiteral("running")
+                      : status.recovering   ? QStringLiteral("recovering")
+                                            : QStringLiteral("stopped"));
+    if (!status.running && !status.message.isEmpty()) {
+        lines << QStringLiteral("reason    %1").arg(status.message);
+    }
+    if (const Preset* preset = currentPreset()) {
+        lines << QStringLiteral("preset    %1  (%2)").arg(qs(preset->id), presetName(*preset));
+    }
+    const SliderValues sliders = currentSliders();
+    lines << QStringLiteral("amounts   bass %1  clarity %2  leveling %3")
+                 .arg(sliders.bass)
+                 .arg(sliders.clarity)
+                 .arg(sliders.leveling);
+    lines << QStringLiteral("volume    %1").arg(volumeSlider_->value());
+    lines << QStringLiteral("balance   %1").arg(balanceSlider_->value());
+    lines << QStringLiteral("bypass    %1")
+                 .arg(controller_.bypassed() ? QStringLiteral("on") : QStringLiteral("off"));
+    lines << QStringLiteral("output    %1").arg(renderCombo_->currentText());
+
+    if (status.running) {
+        // The same two figures the status line shows, added rather than nested:
+        // the engine's estimate knows nothing about the chain's look-ahead.
+        const double processing = controller_.dspLatencyMs();
+        lines << QStringLiteral("latency   %1 ms  (buffer %2 / processing %3)")
+                     .arg(status.latencyMs + processing, 0, 'f', 1)
+                     .arg(status.latencyMs, 0, 'f', 1)
+                     .arg(processing, 0, 'f', 1);
+        if (status.captureSampleRate > 0) {
+            lines << QStringLiteral("rate      %1 -> %2 Hz")
+                         .arg(status.captureSampleRate)
+                         .arg(status.renderSampleRate);
+        }
+        lines << QStringLiteral("dropouts  %1 underrun / %2 overrun")
+                     .arg(status.underruns)
+                     .arg(status.overruns);
+    }
+    return lines.join(QLatin1Char('\n'));
+}
+
+bool MainWindow::handleControlMessage(const QStringList& arguments, QString* reply) {
+    const ControlRequest request = parseControlRequest(arguments);
+    if (!request.error.isEmpty()) {
+        *reply = request.error + QLatin1Char('\n') + controlUsage();
+        return false;
+    }
+    if (request.help) {
+        *reply = controlUsage();
+        return true;
+    }
+    if (request.version) {
+        *reply = QStringLiteral("AudioLens " AUDIOLENS_VERSION "\n");
+        return true;
+    }
+
+    // A second launch with nothing to say is someone opening the app that is
+    // already open -- a shortcut, the Start menu, the installer's tick box.
+    // Every other tray application answers that by showing its window, and
+    // doing nothing at all is indistinguishable from a broken shortcut.
+    if (!request.actsOnRunningInstance()) {
+        if (!request.minimized) {
+            showAndRaise();
+        }
+        return true;
+    }
+    return applyControlRequest(request, reply);
+}
+
+bool MainWindow::applyControlRequest(const ControlRequest& request, QString* reply) {
+    QStringList lines;
+    bool ok = true;
+
+    // A fixed order, not the order the flags were typed in.
+    //
+    // Choosing a preset resets the three amounts to the ones that preset means,
+    // so `--bass 20 --preset movie` would throw the 20 away if the flags were
+    // honoured left to right. Applying the preset first makes both orderings of
+    // the same command line mean the same thing, which is what anyone writing
+    // the second one expects.
+    if (request.preset) {
+        const int row = findPresetRow(*request.preset);
+        if (row < 0) {
+            lines << QStringLiteral("There is no preset called '%1'. Try --list-presets.")
+                         .arg(*request.preset);
+            ok = false;
+        } else {
+            // Through the widget rather than the model, here and below. The
+            // handler behind it is what redraws the screen, writes the settings
+            // file and refreshes the per-device profile (F-13); reaching past it
+            // would leave the window showing one thing and the engine doing
+            // another, and would silently stop remembering the change.
+            presetList_->setCurrentRow(row);
+        }
+    }
+
+    if (request.bass) {
+        bassSlider_->setValue(*request.bass);
+    }
+    if (request.clarity) {
+        claritySlider_->setValue(*request.clarity);
+    }
+    if (request.leveling) {
+        levelingSlider_->setValue(*request.leveling);
+    }
+    if (request.volume) {
+        volumeSlider_->setValue(*request.volume);
+    }
+    if (request.volumeStep) {
+        // QSlider clamps, so a step off either end lands on the end rather than
+        // failing. That is what a volume key should do when it is held down.
+        volumeSlider_->setValue(volumeSlider_->value() + *request.volumeStep);
+    }
+    if (request.balance) {
+        balanceSlider_->setValue(*request.balance);
+    }
+
+    if (request.powerToggle) {
+        powerButton_->setChecked(!powerButton_->isChecked());
+    }
+    if (request.power) {
+        powerButton_->setChecked(*request.power);
+    }
+    if (request.power.value_or(false) && !controller_.running()) {
+        // The button drops itself back when the engine refuses to start, so the
+        // window already tells the truth. The command line has to be told too,
+        // or a script would go on as though the sound were being processed.
+        const QString why = controller_.status().message;
+        lines << (why.isEmpty() ? QStringLiteral("Could not start processing.")
+                                : QStringLiteral("Could not start processing: %1").arg(why));
+        ok = false;
+    }
+
+    if (request.bypass) {
+        // Not written to the settings, and gone at the next launch. The A/B
+        // button on screen is press-and-hold for the same reason: bypass is
+        // something you do while listening, not a mode to leave switched on by
+        // accident and then report as the app not working.
+        controller_.setBypass(*request.bypass);
+    }
+
+    if (request.show) {
+        showAndRaise();
+    }
+    if (request.hide) {
+        hide();
+    }
+
+    if (request.listPresets) {
+        lines << presetListing();
+    }
+    if (request.status) {
+        lines << statusReport();
+    }
+
+    if (request.quit) {
+        lines << QStringLiteral("Quitting.");
+        quitting_ = true;
+        // Queued, so the reply is written and flushed before the event loop
+        // unwinds. Quitting inside the handler would drop the answer, and would
+        // race the restore of the default output device -- which is the one
+        // thing that must not be skipped on the way out (requirement N-04).
+        QTimer::singleShot(0, qApp, &QApplication::quit);
+    }
+
+    if (reply != nullptr) {
+        *reply = lines.join(QLatin1Char('\n'));
+        if (!reply->isEmpty() && !reply->endsWith(QLatin1Char('\n'))) {
+            reply->append(QLatin1Char('\n'));
+        }
+    }
+    return ok;
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {

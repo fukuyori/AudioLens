@@ -1,6 +1,10 @@
 qt_add_executable(AudioLens WIN32
     audio_controller.cpp
     audio_controller.h
+    control_channel.cpp
+    control_channel.h
+    control_request.cpp
+    control_request.h
     default_device_guard.cpp
     default_device_guard.h
     i18n.cpp
@@ -24,6 +28,7 @@ set_target_properties(AudioLens PROPERTIES
 target_link_libraries(AudioLens PRIVATE
     audiolens::core
     Qt6::Widgets
+    Qt6::Network
 )
 
 # Japanese, compiled into the executable rather than shipped beside it.

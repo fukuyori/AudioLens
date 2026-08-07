@@ -1,4 +1,4 @@
-# AudioLens 0.2.2
+# AudioLens 3.0.0
 
 *[日本語](README.ja.md)*
 
@@ -26,9 +26,10 @@ is no separate file for an installer to omit or a user to delete.
 
 ## Status
 
-**M3 (GUI) implemented.** Presets can be chosen from the Qt 6 GUI and the system
-audio is corrected as you listen. A virtual audio device such as VB-Cable has to
-be installed separately to serve as the capture source.
+**All four v1.0 success criteria met (2026-08-07).** Presets can be chosen from
+the Qt 6 GUI, or from the command line, and the system audio is corrected as you
+listen. A virtual audio device such as VB-Cable has to be installed separately to
+serve as the capture source.
 
 | Milestone | State |
 |---|---|
@@ -38,7 +39,8 @@ be installed separately to serve as the capture source.
 | M3.5 robustness (N-03) | Implemented, **every path measured** (including resume from sleep and device loss) |
 | N-04 default device recovery | Implemented, measured |
 | M4 virtual device driver | **Cancelled.** Record of the work up to a successful build: [driver/README.md](driver/README.md) |
-| M5 finishing | Not started |
+| M5 finishing | **Met.** All four success criteria ([docs/requirements.md](docs/requirements.md) §5) |
+| F-36 command-line control | Implemented, confirmed on hardware |
 
 **No self-written kernel driver.** A bug in kernel mode means a blue screen or a
 machine that will not boot, whereas a virtual audio device is only the way sound
@@ -106,6 +108,12 @@ Produces `dist\AudioLens-<version>-setup.exe`, around 34 MB.
 - **The Visual C++ runtime** is installed only if it is missing.
 - **A missing VB-Cable is reported** but does not stop the install; it can be
   added afterwards.
+- **Adding to PATH is optional and off by default.** It is for people driving
+  AudioLens from a shell, and it rewrites the user's PATH — a failure there is
+  felt outside AudioLens — so it is only done when asked for. Uninstalling
+  removes just this one entry along with its separator, and keeps the existing
+  value type (normally `REG_EXPAND_SZ`), so a PATH containing `%USERPROFILE%`
+  survives. An elevated install writes the machine PATH, otherwise the user's.
 - **"Start with Windows" is not set by the installer.** The app manages that
   checkbox itself, and two writers of the same registry value disagree sooner or
   later.
@@ -120,6 +128,38 @@ $bin = ".\build\release\bin"
 
 # The GUI, which is the normal way in
 & $bin\AudioLens.exe
+
+# --- driving the running app from a shell, a hotkey or a batch file ---
+#
+# These reach the copy of AudioLens that is already running and take effect at
+# once. If none is running, the ones that change something start it with them
+# applied, and the ones that only ask a question say so and stop rather than
+# launching an app in order to report that it is running. Launching with no
+# options at all brings the window to the front, so a second launch can no
+# longer end up as a second instance fighting over the default output device.
+
+# --preset takes one of ten ids. The name shown on screen works too, in
+# whichever language the interface is running in.
+#   standard  conversation  lecture  movie  night  game
+#   rock      jazz          classical      ambient
+& $bin\AudioLens.exe --preset movie
+& $bin\AudioLens.exe --preset Film              # the displayed name also works
+& $bin\AudioLens.exe --volume 60 --balance -5
+& $bin\AudioLens.exe --volume-step -5          # for a volume hotkey
+& $bin\AudioLens.exe --bass 20 --clarity 80    # applied after --preset, always
+& $bin\AudioLens.exe --toggle                  # processing on/off
+& $bin\AudioLens.exe --bypass on               # hear it before processing
+& $bin\AudioLens.exe --quit                    # exit, giving the device back
+& $bin\AudioLens.exe --help                    # every option, with its range
+
+# Reading the answer needs the shell to wait, which it does not do for a
+# windowed program: the text otherwise lands after the prompt has returned.
+Start-Process -Wait -NoNewWindow $bin\AudioLens.exe -ArgumentList '--status'
+Start-Process -Wait -NoNewWindow $bin\AudioLens.exe -ArgumentList '--list-presets'
+
+# Exit codes: 0 = done / 1 = not running, or could not be carried out /
+#             2 = bad command line (unknown option, out of range, missing value)
+#   --quit alone returns 0 when nothing was running: the state asked for holds.
 
 # --- everything below is for measurement and diagnosis ---
 
@@ -155,7 +195,7 @@ $bin = ".\build\release\bin"
 & $bin\audiolens_process.exe --input in.wav --output out.wav --preset movie --no-autogain
 & $bin\audiolens_process.exe --input in.wav --output out.wav --preset movie --no-deesser
 
-# Unit tests (no hardware required, 111 of them)
+# Unit tests (no hardware required, 121 of them)
 & $bin\audiolens_tests.exe
 
 # Process loopback spike (used to settle option E; the answer was no)

@@ -1,4 +1,4 @@
-# AudioLens 0.2.2
+# AudioLens 3.0.0
 
 *[English](README.md)*
 
@@ -16,21 +16,22 @@ PC で再生される音声を、用途に合わせて聞き取りやすく調�
 
 ## ステータス
 
-**M3(GUI)実装済み。** Qt 6 の GUI からプリセットを選び、システム音声を補正して聞ける。取り込み元には VB-Cable などの仮想オーディオデバイスを別途用意する。
+**v1.0 の成功基準を 4 項目すべて満たした(2026-08-07)。** Qt 6 の GUI からプリセットを選び、システム音声を補正して聞ける。コマンドラインからも操作できる。取り込み元には VB-Cable などの仮想オーディオデバイスを別途用意する。
 
 | マイルストーン | 状態 |
 |---|---|
 | M1 エンジン検証 | 実装済み・実測済み |
 | M2 DSP コア | 実装済み・実測済み |
 | M3 GUI・プリセット保存 | 実装済み・実機確認済み |
-| M3.5 堅牢化 (N-03) | 実装済み・**全経路の実測確認済み**(スリープ復帰・デバイス消失を含む) |
+| M3.5 堅牢化 (N-03) | 実装済み・ **全経路の実測確認済み** (スリープ復帰・デバイス消失を含む) |
 | N-04 既定デバイスの復旧 | 実装済み・実測確認済み |
-| M4 仮想デバイスドライバ | **中止。**ビルド成功までの記録([driver/README.md](driver/README.md)) |
-| M5 仕上げ | 未着手 |
+| M4 仮想デバイスドライバ | **中止。** ビルド成功までの記録([driver/README.md](driver/README.md)) |
+| M5 仕上げ | **達成。** 成功基準 4 項目すべて([docs/requirements.md](docs/requirements.md) §5) |
+| F-36 コマンドライン制御 | 実装済み・実機確認済み |
 
-**自作カーネルドライバは使いません。**カーネルモードのバグはブルースクリーンや起動不能を招くのに対し、仮想オーディオデバイスは音の入口にすぎません。広く配布され Microsoft の署名を受けた既存ドライバのほうが安全なので、取り込み元には VB-Cable 等を使います。
+**自作カーネルドライバは使いません。** カーネルモードのバグはブルースクリーンや起動不能を招くのに対し、仮想オーディオデバイスは音の入口にすぎません。広く配布され Microsoft の署名を受けた既存ドライバのほうが安全なので、取り込み元には VB-Cable 等を使います。
 
-**VB-Cable は同梱しません。ご自身で導入してください。**VB-Audio 社の製品であり、再配布には同社との合意が要ります。インストーラーは導入の有無を確認して知らせるだけです。ライセンス条件は利用者と VB-Audio の間の問題で、個人利用は無償、業務・商用利用には別途ライセンスが必要とされています。<https://vb-audio.com/Cable/> をご確認ください。
+**VB-Cable は同梱しません。ご自身で導入してください。** VB-Audio 社の製品であり、再配布には同社との合意が要ります。インストーラーは導入の有無を確認して知らせるだけです。ライセンス条件は利用者と VB-Audio の間の問題で、個人利用は無償、業務・商用利用には別途ライセンスが必要とされています。<https://vb-audio.com/Cable/> をご確認ください。
 
 いずれも経緯は [docs/requirements.md](docs/requirements.md) §4.1 / §4.1.1。
 
@@ -59,13 +60,14 @@ Visual Studio(C++ ワークロード)があれば、CMake と Ninja は同梱の
 
 `dist\AudioLens-<version>-setup.exe`(約 34 MB)ができる。
 
-- **ビルドはしない。**梱包するだけである。成果物が無ければ止まり、ビルドの手順を案内する。ビルドは `scripts\build.ps1` の仕事で、こちらが黙って呼ぶと「ビルドはどれを使うのか」が答えられなくなる。
-- **バージョンは `CMakeLists.txt` から読む。**さらに、ビルド済みバイナリが名乗るバージョンと突き合わせ、食い違えば止まる。ソースだけ上げてビルドを忘れると、中身が古いインストーラーができるため。
-- **管理者権限は要らない。**既定では `%LOCALAPPDATA%\Programs\AudioLens` に入る。Program Files を選べば昇格する。
-- **`.pdb` と `.ilk` は含めない。**両者で 187 MB あり、ビルド出力の 7 割を占める。
-- **Visual C++ ランタイム**は、入っていないときだけ導入する。
-- **VB-Cable が無ければ知らせる**(導入は止めない。あとから入れてもよい)。
-- **「Windows 起動時に開始」はインストーラーでは設定しない。**アプリ自身が画面のチェックボックスで管理しており、両方が同じレジストリ値を書くと食い違う。
+- **ビルドはしない。** 梱包するだけである。成果物が無ければ止まり、ビルドの手順を案内する。ビルドは `scripts\build.ps1` の仕事で、こちらが黙って呼ぶと「ビルドはどれを使うのか」が答えられなくなる。
+- **バージョンは `CMakeLists.txt` から読む。** さらに、ビルド済みバイナリが名乗るバージョンと突き合わせ、食い違えば止まる。ソースだけ上げてビルドを忘れると、中身が古いインストーラーができるため。
+- **管理者権限は要らない。** 既定では `%LOCALAPPDATA%\Programs\AudioLens` に入る。Program Files を選べば昇格する。
+- **`.pdb` と `.ilk` は含めない。** 両者で 187 MB あり、ビルド出力の 7 割を占める。
+- **Visual C++ ランタイム** は、入っていないときだけ導入する。
+- **VB-Cable が無ければ知らせる** (導入は止めない。あとから入れてもよい)。
+- **PATH への追加は任意で、既定はオフ。** コマンドラインから使う人向け。利用者の PATH を書き換える操作で、失敗すれば影響が AudioLens の外に出るため、選んだ人にだけ行う。アンインストール時は自分の分だけを区切りごと取り除き、既存の型(通常 `REG_EXPAND_SZ`)も保つので、`%USERPROFILE%` を含む PATH が壊れない。昇格した場合はシステムの PATH、していなければ利用者の PATH。
+- **「Windows 起動時に開始」はインストーラーでは設定しない。** アプリ自身が画面のチェックボックスで管理しており、両方が同じレジストリ値を書くと食い違う。
 
 アンインストール時は、設定・プリセット・ログ(`%APPDATA%\AudioLens`)を消すかどうか尋ねる。
 
@@ -76,6 +78,36 @@ $bin = ".\build\release\bin"
 
 # GUI(通常はこちら)
 & $bin\AudioLens.exe
+
+# --- 常駐中のアプリを、シェル・ホットキー・バッチから操作する ---
+#
+# すでに動いている AudioLens に届き、即座に反映される。動いていなければ、
+# 状態を変えるオプションはその設定で起動し、問い合わせるだけのオプションは
+# 「起動していません」と答えて終わる(答えるためにアプリを起こさない)。
+# オプション無しの起動はウィンドウを前面に出すので、2 個目が既定出力
+# デバイスを取り合うことがなくなった。
+
+# --preset に渡す id は 10 個。表示名(「映画」)でも指定できる。
+#   standard  conversation  lecture  movie  night  game
+#   rock      jazz          classical      ambient
+& $bin\AudioLens.exe --preset movie
+& $bin\AudioLens.exe --preset 映画              # 画面に出ている名前でも通る
+& $bin\AudioLens.exe --volume 60 --balance -5
+& $bin\AudioLens.exe --volume-step -5          # 音量ホットキー向け
+& $bin\AudioLens.exe --bass 20 --clarity 80    # 書いた順によらず --preset の後に適用
+& $bin\AudioLens.exe --toggle                  # 処理の入切
+& $bin\AudioLens.exe --bypass on               # 処理前の音を聴く
+& $bin\AudioLens.exe --quit                    # 既定デバイスを戻して終了
+& $bin\AudioLens.exe --help                    # 全オプションと範囲
+
+# 出力を読むにはシェルに待たせる。ウィンドウアプリの終了を待たないため、
+# そのまま実行するとプロンプトが戻ったあとに文字が現れる。
+Start-Process -Wait -NoNewWindow $bin\AudioLens.exe -ArgumentList '--status'
+Start-Process -Wait -NoNewWindow $bin\AudioLens.exe -ArgumentList '--list-presets'
+
+# 終了コード: 0 = 実行した / 1 = 常駐していない・実行できなかった /
+#             2 = コマンドラインが不正(未知のオプション、範囲外、値の欠落)
+#   --quit だけは、常駐していなくても 0(求めた状態は既に成り立っているため)
 
 # --- 以下は検証・測定用の CLI ---
 
@@ -110,7 +142,7 @@ $bin = ".\build\release\bin"
 & $bin\audiolens_process.exe --input in.wav --output out.wav --preset movie --no-autogain
 & $bin\audiolens_process.exe --input in.wav --output out.wav --preset movie --no-deesser
 
-# 単体テスト(ハードウェア不要、111 件)
+# 単体テスト(ハードウェア不要、121 件)
 & $bin\audiolens_tests.exe
 
 # プロセスループバック検証(案 E の判定に使った。結論は不成立)
@@ -122,7 +154,7 @@ VB-Cable などの仮想オーディオデバイスを手動でインストー�
 
 ## 不具合を調べる
 
-GUI は `%APPDATA%\AudioLens\audiolens.log` に記録を残す(1 MB で 1 世代だけ回す)。**目の前で起きなかった不具合はここでしか分からない** — ウィンドウアプリには stderr の行き先が無いので、以前は何も残らなかった。
+GUI は `%APPDATA%\AudioLens\audiolens.log` に記録を残す(1 MB で 1 世代だけ回す)。 **目の前で起きなかった不具合はここでしか分からない** — ウィンドウアプリには stderr の行き先が無いので、以前は何も残らなかった。
 
 ```powershell
 Get-Content "$env:APPDATA\AudioLens\audiolens.log" -Tail 40
@@ -132,7 +164,7 @@ Get-Content "$env:APPDATA\AudioLens\audiolens.log" -Tail 40
 
 ## ライセンス
 
-**Apache License 2.0**([LICENSE](LICENSE))。ただし `driver/` は例外で、**Microsoft Public License (MS-PL)** である。
+**Apache License 2.0** ([LICENSE](LICENSE))。ただし `driver/` は例外で、 **Microsoft Public License (MS-PL)** である。
 
 `driver/` は Microsoft の [Windows-driver-samples](https://github.com/microsoft/Windows-driver-samples) の `audio/simpleaudiosample` に由来する。MS-PL 3(D) はソース形式での配布を MS-PL 下に置くことを求めるため、この部分だけ Apache 2.0 の許諾から外れる。各ファイルの Microsoft 著作権表示は保持すること。詳細は [NOTICE](NOTICE) と [driver/LICENSE-MS-PL.txt](driver/LICENSE-MS-PL.txt)。
 

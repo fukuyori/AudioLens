@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/audio_controller.h"
+#include "app/control_request.h"
 #include "app/settings_store.h"
 #include "core/preset.h"
 
@@ -31,6 +32,18 @@ class MainWindow : public QMainWindow {
 public:
     MainWindow();
     ~MainWindow() override;
+
+    /// Carries out a command line (requirement F-36). Returns false if any part
+    /// of it could not be, and fills `reply` with the text to print either way.
+    ///
+    /// Public because the same request reaches the window by two roads: the one
+    /// this process was started with, and the ones later processes hand over the
+    /// pipe. They are the same instructions and must do the same thing.
+    bool applyControlRequest(const ControlRequest& request, QString* reply);
+
+    /// Parses and carries out what another launch of the executable sent down
+    /// the control channel. Called from the handler installed in main().
+    bool handleControlMessage(const QStringList& arguments, QString* reply);
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -82,6 +95,17 @@ private:
     /// Called once at startup. A device left recorded in the settings means the
     /// previous run never gave it back, so the routing is repaired here.
     void repairStrandedDefaultDevice();
+
+    // --- command line (requirement F-36) ---
+    /// Row of the preset whose id, or failing that display name, is `name`.
+    /// Returns -1 when there is none. Case-insensitive: the ids are typed by
+    /// hand into a shell, where nobody holds shift for a preset called Movie.
+    int findPresetRow(const QString& name) const;
+
+    QString statusReport() const;
+    QString presetListing() const;
+
+    void showAndRaise();
 
     void applyCurrentSettings();
     void updateStatusLabel(const EngineStatus& status);
